@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generic event-driven signal engine built on Tavily, Gemini, and Python rules."""
+"""Fact-based event strategy with retrieval, extraction, propagation, and rules."""
 
 from __future__ import annotations
 
@@ -7,93 +7,120 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any
 from urllib.parse import urlparse
 
+from article_filters import filter_articles
 from ask_gemini import call_gemini, extract_text, get_api_key
 from market_data import fetch_yahoo_chart, summarize_yahoo_chart
+from propagation_graph import build_propagation_facts, metadata_for
 from search_tavily import ENV_PATH, call_tavily, load_dotenv
 from watchlists import resolve_symbols
 
 DEFAULT_RESULTS_PER_SYMBOL = 4
 RUNS_DIR = Path(__file__).resolve().parent / "runs"
 EVENT_TYPE_MULTIPLIERS = {
-    "guidance_raise": 1.25,
+    "supply_disruption": 1.35,
+    "guidance_raise": 1.20,
     "guidance_cut": 1.25,
-    "earnings_beat": 1.15,
+    "earnings_beat": 1.10,
     "earnings_miss": 1.15,
     "regulatory_probe": 1.30,
-    "litigation": 1.10,
-    "analyst_upgrade": 0.75,
-    "analyst_downgrade": 0.75,
-    "mna": 0.95,
-    "product_launch": 0.70,
-    "macro_theme": 0.60,
-    "generic_positive": 0.55,
-    "generic_negative": 0.55,
-    "other": 0.50,
+    "litigation": 1.05,
+    "analyst_upgrade": 0.70,
+    "analyst_downgrade": 0.70,
+    "mna": 0.85,
+    "product_launch": 0.65,
+    "partnership": 0.60,
+    "capex": 0.65,
+    "demand_signal": 0.75,
+    "macro_theme": 0.70,
+    "generic_positive": 0.50,
+    "generic_negative": 0.50,
+    "other": 0.45,
 }
 KEYWORD_RULES = [
     {
+        "event_type": "supply_disruption",
+        "direction": -1,
+        "severity_score": 0.92,
+        "severity_label": "high",
+        "macro_theme": "supply_chain",
+        "keywords": ["supply disruption", "production halt", "shutdown", "factory fire", "earthquake", "export curbs"],
+    },
+    {
         "event_type": "guidance_raise",
         "direction": 1,
-        "severity": 0.95,
+        "severity_score": 0.90,
+        "severity_label": "high",
+        "macro_theme": "demand",
         "keywords": ["raises guidance", "lifts outlook", "boosts forecast", "raises outlook"],
     },
     {
         "event_type": "guidance_cut",
         "direction": -1,
-        "severity": 0.95,
+        "severity_score": 0.92,
+        "severity_label": "high",
+        "macro_theme": "demand",
         "keywords": ["cuts guidance", "lowers outlook", "slashes forecast", "warns on outlook"],
     },
     {
         "event_type": "earnings_beat",
         "direction": 1,
-        "severity": 0.88,
+        "severity_score": 0.84,
+        "severity_label": "medium",
+        "macro_theme": "earnings",
         "keywords": ["beats estimates", "tops estimates", "earnings beat", "profit beat", "revenue beat"],
     },
     {
         "event_type": "earnings_miss",
         "direction": -1,
-        "severity": 0.88,
+        "severity_score": 0.84,
+        "severity_label": "medium",
+        "macro_theme": "earnings",
         "keywords": ["misses estimates", "missed estimates", "earnings miss", "profit miss", "revenue miss"],
     },
     {
         "event_type": "regulatory_probe",
         "direction": -1,
-        "severity": 0.92,
-        "keywords": ["antitrust", "probe", "investigation", "regulator", "doj", "sec", "ftc"],
-    },
-    {
-        "event_type": "litigation",
-        "direction": -1,
-        "severity": 0.82,
-        "keywords": ["lawsuit", "sues", "settlement", "recall", "fine"],
-    },
-    {
-        "event_type": "analyst_upgrade",
-        "direction": 1,
-        "severity": 0.58,
-        "keywords": ["upgraded", "buy rating", "raised price target", "outperform"],
-    },
-    {
-        "event_type": "analyst_downgrade",
-        "direction": -1,
-        "severity": 0.58,
-        "keywords": ["downgraded", "sell rating", "cut price target", "underperform"],
+        "severity_score": 0.90,
+        "severity_label": "high",
+        "macro_theme": "geopolitical_risk",
+        "keywords": ["antitrust", "probe", "investigation", "regulator", "doj", "sec", "ftc", "export ban"],
     },
     {
         "event_type": "mna",
         "direction": 1,
-        "severity": 0.72,
+        "severity_score": 0.68,
+        "severity_label": "medium",
+        "macro_theme": "strategic_activity",
         "keywords": ["acquires", "acquisition", "buyout", "merger", "takeover"],
     },
     {
         "event_type": "product_launch",
         "direction": 1,
-        "severity": 0.62,
+        "severity_score": 0.56,
+        "severity_label": "medium",
+        "macro_theme": "innovation",
         "keywords": ["launches", "unveils", "introduces", "releases"],
+    },
+    {
+        "event_type": "analyst_upgrade",
+        "direction": 1,
+        "severity_score": 0.46,
+        "severity_label": "low",
+        "macro_theme": "sell_side",
+        "keywords": ["upgraded", "buy rating", "raised price target", "outperform"],
+    },
+    {
+        "event_type": "analyst_downgrade",
+        "direction": -1,
+        "severity_score": 0.46,
+        "severity_label": "low",
+        "macro_theme": "sell_side",
+        "keywords": ["downgraded", "sell rating", "cut price target", "underperform"],
     },
 ]
 POSITIVE_WORDS = {"surge", "gain", "strong", "wins", "expands", "growth", "record", "bullish"}
@@ -154,9 +181,10 @@ def build_tavily_query(symbol: str, summary: dict[str, Any]) -> str:
     instrument_type = str(summary.get("instrument_type", "")).strip() or "stock"
     label = f"{symbol} {company}".strip()
     return (
-        f"Latest market-moving news for {label} {instrument_type}. Focus on "
-        f"earnings, guidance, regulation, lawsuits, M&A, analyst moves, product "
-        f"launches, and other catalysts that could move the price."
+        f"Latest discrete market-moving news articles for {label} {instrument_type}. "
+        f"Prefer real article pages, not quote/profile pages. Focus on earnings, "
+        f"guidance, regulation, supply disruption, litigation, M&A, analyst moves, "
+        f"capex, and product launches."
     )
 
 
@@ -187,35 +215,42 @@ def normalize_articles(symbol: str, tavily_data: dict[str, Any], query: str) -> 
     return articles
 
 
-def build_gemini_event_prompt(symbol: str, summary: dict[str, Any], articles: list[dict[str, Any]]) -> str:
+def build_gemini_fact_prompt(symbol: str, summary: dict[str, Any], articles: list[dict[str, Any]]) -> str:
     lines = [
-        "Extract structured market events from the supplied articles.",
+        "Extract structured market-event facts from the supplied article evidence.",
         f"Ticker: {symbol}",
         f"Instrument name: {summary.get('name', '')}",
         "",
         "Return JSON only with this schema:",
-        '{',
+        "{",
         '  "symbol": "TICKER",',
-        '  "events": [',
+        '  "facts": [',
         "    {",
         '      "article_title": "string",',
         '      "source_url": "string",',
-        '      "event_type": "guidance_raise|guidance_cut|earnings_beat|earnings_miss|regulatory_probe|litigation|analyst_upgrade|analyst_downgrade|mna|product_launch|macro_theme|other",',
-        '      "direction": -1,',
-        '      "severity": 0.0,',
-        '      "relevance": 0.0,',
+        '      "entity_name": "string",',
+        '      "event_type": "supply_disruption|guidance_raise|guidance_cut|earnings_beat|earnings_miss|regulatory_probe|litigation|analyst_upgrade|analyst_downgrade|mna|product_launch|partnership|capex|demand_signal|macro_theme|other",',
+        '      "severity_label": "low|medium|high",',
+        '      "severity_score": 0.0,',
         '      "confidence": 0.0,',
-        '      "horizon": "intraday|1d|1w",',
-        '      "rationale": "one short sentence" ',
+        '      "sentiment_score": -1.0,',
+        '      "direction": "up|down|neutral",',
+        '      "time_horizon": "intraday|short_term|medium_term",',
+        '      "macro_theme": "geopolitical_risk|supply_chain|demand|earnings|innovation|regulation|strategic_activity|sell_side|other",',
+        '      "region": "US|APAC|Europe|Global|other",',
+        '      "affected_sectors": ["string"],',
+        '      "summary": "one short sentence" ',
         "    }",
         "  ]",
         "}",
         "",
         "Rules:",
         "- Use only the supplied evidence.",
-        "- Omit articles that do not contain a concrete market-moving event.",
-        "- severity, relevance, and confidence must be between 0 and 1.",
-        "- direction must be -1, 0, or 1.",
+        "- Ignore profile pages, quote pages, and non-event pages.",
+        "- If there is no discrete event, omit that article entirely.",
+        "- severity_score and confidence must be between 0 and 1.",
+        "- sentiment_score must be between -1 and 1.",
+        "- Be conservative and avoid hallucination.",
         "",
         "Articles:",
     ]
@@ -255,30 +290,51 @@ def extract_json_payload(text: str) -> dict[str, Any]:
     return {}
 
 
-def event_score(event: dict[str, Any]) -> float:
-    multiplier = EVENT_TYPE_MULTIPLIERS.get(str(event.get("event_type", "other")), 0.5)
-    direction = int(event.get("direction", 0))
-    severity = clamp(float(event.get("severity", 0.0) or 0.0), 0.0, 1.0)
-    relevance = clamp(float(event.get("relevance", 0.0) or 0.0), 0.0, 1.0)
-    confidence = clamp(float(event.get("confidence", 0.0) or 0.0), 0.0, 1.0)
-    source_score = clamp(float(event.get("source_score", 0.65) or 0.65), 0.35, 1.0)
-    return direction * multiplier * severity * relevance * confidence * source_score
+def direction_sign(direction: str, sentiment_score: float) -> int:
+    mapping = {"up": 1, "down": -1, "neutral": 0}
+    if direction in {"up", "down"}:
+        return mapping[direction]
+    if sentiment_score > 0:
+        return 1
+    if sentiment_score < 0:
+        return -1
+    return 0
 
 
-def extract_events_with_gemini(
+def severity_label_from_score(score: float) -> str:
+    if score >= 0.8:
+        return "high"
+    if score >= 0.5:
+        return "medium"
+    return "low"
+
+
+def base_event_score(fact: dict[str, Any]) -> float:
+    event_type = str(fact.get("event_type", "other"))
+    multiplier = EVENT_TYPE_MULTIPLIERS.get(event_type, EVENT_TYPE_MULTIPLIERS["other"])
+    severity_score = clamp(float(fact.get("severity_score", 0.0) or 0.0), 0.0, 1.0)
+    confidence = clamp(float(fact.get("confidence", 0.0) or 0.0), 0.0, 1.0)
+    sentiment_score = clamp(float(fact.get("sentiment_score", 0.0) or 0.0), -1.0, 1.0)
+    quality_score = clamp(float(fact.get("quality_score", 0.0) or 0.0), 0.0, 1.0)
+    sign = direction_sign(str(fact.get("direction", "neutral")), sentiment_score)
+    magnitude = abs(sentiment_score) if sentiment_score != 0 else 0.25
+    quality_weight = clamp(0.45 + 0.55 * quality_score, 0.35, 1.0)
+    return sign * multiplier * severity_score * confidence * magnitude * quality_weight
+
+
+def extract_facts_with_gemini(
     symbol: str,
     summary: dict[str, Any],
     articles: list[dict[str, Any]],
     gemini_key: str,
 ) -> list[dict[str, Any]]:
-    prompt = build_gemini_event_prompt(symbol, summary, articles)
+    prompt = build_gemini_fact_prompt(symbol, summary, articles)
     response = call_gemini(gemini_key, prompt)
-    text = extract_text(response)
-    payload = extract_json_payload(text)
-    items = payload.get("events", [])
-    events: list[dict[str, Any]] = []
+    payload = extract_json_payload(extract_text(response))
+    items = payload.get("facts", [])
+    facts: list[dict[str, Any]] = []
     if not isinstance(items, list):
-        return events
+        return facts
 
     article_index = {article["url"]: article for article in articles}
     for item in items:
@@ -286,23 +342,32 @@ def extract_events_with_gemini(
             continue
         url = str(item.get("source_url", "")).strip()
         article = article_index.get(url, {})
-        event = {
+        direction = str(item.get("direction", "neutral")).strip().lower() or "neutral"
+        fact = {
             "symbol": symbol,
             "article_title": str(item.get("article_title", article.get("title", ""))).strip(),
             "source_url": url,
+            "entity_name": str(item.get("entity_name", summary.get("name", symbol))).strip(),
             "event_type": str(item.get("event_type", "other")).strip() or "other",
-            "direction": int(item.get("direction", 0) or 0),
-            "severity": clamp(float(item.get("severity", 0.0) or 0.0), 0.0, 1.0),
-            "relevance": clamp(float(item.get("relevance", 0.0) or 0.0), 0.0, 1.0),
+            "severity_score": clamp(float(item.get("severity_score", 0.0) or 0.0), 0.0, 1.0),
+            "severity_label": str(item.get("severity_label", "")).strip().lower(),
             "confidence": clamp(float(item.get("confidence", 0.0) or 0.0), 0.0, 1.0),
-            "horizon": str(item.get("horizon", "1d")).strip() or "1d",
-            "rationale": str(item.get("rationale", "")).strip(),
+            "sentiment_score": clamp(float(item.get("sentiment_score", 0.0) or 0.0), -1.0, 1.0),
+            "direction": direction,
+            "time_horizon": str(item.get("time_horizon", "short_term")).strip() or "short_term",
+            "macro_theme": str(item.get("macro_theme", "other")).strip() or "other",
+            "region": str(item.get("region", metadata_for(symbol).get("region", "Global"))).strip() or "Global",
+            "affected_sectors": item.get("affected_sectors", []) if isinstance(item.get("affected_sectors", []), list) else [],
+            "summary": str(item.get("summary", "")).strip(),
             "source_score": float(article.get("source_score", 0.65) or 0.65),
+            "quality_score": float(article.get("quality_score", 0.6) or 0.6),
             "extractor": "gemini",
         }
-        event["event_score"] = event_score(event)
-        events.append(event)
-    return events
+        if not fact["severity_label"]:
+            fact["severity_label"] = severity_label_from_score(fact["severity_score"])
+        fact["base_event_score"] = round(base_event_score(fact), 6)
+        facts.append(fact)
+    return facts
 
 
 def keyword_sentiment(text: str) -> int:
@@ -316,8 +381,16 @@ def keyword_sentiment(text: str) -> int:
     return 0
 
 
-def extract_events_with_keywords(symbol: str, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
+def infer_region(symbol: str) -> str:
+    return str(metadata_for(symbol).get("region", "Global"))
+
+
+def infer_sector(symbol: str) -> str:
+    return str(metadata_for(symbol).get("sector", "unknown"))
+
+
+def extract_facts_with_keywords(symbol: str, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
 
     for article in articles:
         text = f"{article['title']} {article['snippet']}".lower()
@@ -327,6 +400,7 @@ def extract_events_with_keywords(symbol: str, articles: list[dict[str, Any]]) ->
                 matched_rule = rule
                 break
 
+        sentiment = 0
         if matched_rule is None:
             sentiment = keyword_sentiment(text)
             if sentiment == 0:
@@ -334,56 +408,178 @@ def extract_events_with_keywords(symbol: str, articles: list[dict[str, Any]]) ->
             matched_rule = {
                 "event_type": "generic_positive" if sentiment > 0 else "generic_negative",
                 "direction": sentiment,
-                "severity": 0.48,
+                "severity_score": 0.42,
+                "severity_label": "low",
+                "macro_theme": "other",
             }
+        else:
+            sentiment = matched_rule["direction"]
 
-        event = {
+        fact = {
             "symbol": symbol,
             "article_title": article["title"],
             "source_url": article["url"],
+            "entity_name": symbol,
             "event_type": matched_rule["event_type"],
-            "direction": matched_rule["direction"],
-            "severity": matched_rule["severity"],
-            "relevance": clamp(0.55 + 0.35 * float(article["source_score"]), 0.0, 1.0),
+            "severity_score": matched_rule["severity_score"],
+            "severity_label": matched_rule["severity_label"],
             "confidence": 0.58,
-            "horizon": "1d",
-            "rationale": "Keyword rules matched the article headline/snippet.",
+            "sentiment_score": 0.72 * sentiment,
+            "direction": "up" if sentiment > 0 else "down",
+            "time_horizon": "short_term",
+            "macro_theme": matched_rule["macro_theme"],
+            "region": infer_region(symbol),
+            "affected_sectors": [infer_sector(symbol)],
+            "summary": "Keyword fallback matched the article headline/snippet.",
             "source_score": float(article["source_score"]),
+            "quality_score": float(article.get("quality_score", article["source_score"])),
             "extractor": "keyword_rules",
         }
-        event["event_score"] = event_score(event)
-        events.append(event)
+        fact["base_event_score"] = round(base_event_score(fact), 6)
+        facts.append(fact)
 
-    return events
+    return facts
 
 
-def summarize_symbol(symbol: str, summary: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
-    total_score = sum(float(event.get("event_score", 0.0) or 0.0) for event in events)
-    if total_score >= 0.75:
+def build_sector_alerts(
+    event_facts: list[dict[str, Any]],
+    propagation_facts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for fact in event_facts:
+        score = float(fact.get("base_event_score", 0.0) or 0.0)
+        if score == 0:
+            continue
+        sectors = fact.get("affected_sectors", [])
+        if not isinstance(sectors, list) or not sectors:
+            sectors = [infer_sector(str(fact.get("symbol", "")))]
+        for sector in sectors:
+            key = (sector, str(fact.get("macro_theme", "other")))
+            bucket = buckets.setdefault(
+                key,
+                {"sector": sector, "macro_theme": key[1], "score": 0.0, "symbols": set(), "drivers": []},
+            )
+            bucket["score"] += score
+            bucket["symbols"].add(str(fact.get("symbol", "")))
+            bucket["drivers"].append(str(fact.get("event_type", "")))
+
+    for fact in propagation_facts:
+        score = float(fact.get("impact_score", 0.0) or 0.0)
+        if score == 0:
+            continue
+        key = (str(fact.get("target_sector", "unknown")), str(fact.get("macro_theme", "other")))
+        bucket = buckets.setdefault(
+            key,
+            {"sector": key[0], "macro_theme": key[1], "score": 0.0, "symbols": set(), "drivers": []},
+        )
+        bucket["score"] += score
+        bucket["symbols"].add(str(fact.get("target_symbol", "")))
+        bucket["drivers"].append(str(fact.get("event_type", "")))
+
+    alerts: list[dict[str, Any]] = []
+    for (_, _), bucket in buckets.items():
+        symbols = sorted(bucket["symbols"])
+        if len(symbols) < 2:
+            continue
+        score = round(float(bucket["score"]), 6)
+        if score <= -0.60:
+            alert_level = "HIGH"
+        elif score <= -0.30:
+            alert_level = "MEDIUM"
+        elif score >= 0.60:
+            alert_level = "HIGH_POSITIVE"
+        elif score >= 0.30:
+            alert_level = "MEDIUM_POSITIVE"
+        else:
+            continue
+
+        alerts.append(
+            {
+                "sector": bucket["sector"],
+                "macro_theme": bucket["macro_theme"],
+                "score": score,
+                "alert_level": alert_level,
+                "affected_symbols": symbols,
+                "driver_event_types": sorted(set(bucket["drivers"])),
+                "explanation": (
+                    f"{bucket['sector']} has {alert_level.lower()} event pressure from "
+                    f"{bucket['macro_theme']} across {len(symbols)} symbols."
+                ),
+            }
+        )
+
+    alerts.sort(key=lambda item: abs(float(item["score"])), reverse=True)
+    return alerts
+
+
+def summarize_symbol(
+    symbol: str,
+    summary: dict[str, Any],
+    event_facts: list[dict[str, Any]],
+    propagation_facts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    direct_score = sum(float(fact.get("base_event_score", 0.0) or 0.0) for fact in event_facts)
+    propagated_score = sum(float(fact.get("impact_score", 0.0) or 0.0) for fact in propagation_facts)
+    total_score = direct_score + propagated_score
+
+    if total_score >= 0.55:
         signal = "long"
-    elif total_score <= -0.75:
+    elif total_score <= -0.55:
         signal = "short"
     else:
         signal = "neutral"
 
-    sorted_events = sorted(events, key=lambda item: abs(float(item.get("event_score", 0.0) or 0.0)), reverse=True)
-    strongest = sorted_events[0] if sorted_events else {}
-    explanation = (
-        f"{symbol} is {signal} because {len(sorted_events)} material events were scored. "
-        f"Top driver: {strongest.get('event_type', 'none')}."
-    )
+    risk_level = "LOW"
+    if total_score <= -0.75:
+        risk_level = "HIGH"
+    elif total_score <= -0.40:
+        risk_level = "MEDIUM"
+    elif total_score >= 0.75:
+        risk_level = "HIGH_POSITIVE"
+    elif total_score >= 0.40:
+        risk_level = "MEDIUM_POSITIVE"
+
+    top_direct = sorted(event_facts, key=lambda item: abs(float(item.get("base_event_score", 0.0) or 0.0)), reverse=True)
+    top_prop = sorted(propagation_facts, key=lambda item: abs(float(item.get("impact_score", 0.0) or 0.0)), reverse=True)
+    rules_fired: list[str] = []
+    if top_direct:
+        strongest = top_direct[0]
+        if strongest.get("severity_label") == "high" and float(strongest.get("base_event_score", 0.0)) < 0:
+            rules_fired.append("direct_high_severity_event")
+        if strongest.get("event_type") in {"supply_disruption", "regulatory_probe"}:
+            rules_fired.append("systemic_event_type")
+    if top_prop and abs(float(top_prop[0].get("impact_score", 0.0) or 0.0)) >= 0.12:
+        rules_fired.append("downstream_contagion")
+
+    explanation_parts = []
+    if top_direct:
+        explanation_parts.append(
+            f"direct driver: {top_direct[0].get('event_type', 'none')}"
+        )
+    if top_prop:
+        explanation_parts.append(
+            f"propagation from {top_prop[0].get('source_symbol', 'unknown')}"
+        )
+    if not explanation_parts:
+        explanation_parts.append("no material event facts survived filtering")
 
     return {
         "symbol": symbol,
-        "name": summary.get("name", ""),
+        "name": summary.get("name", symbol),
+        "sector": infer_sector(symbol),
+        "region": infer_region(symbol),
         "signal": signal,
-        "total_score": round(total_score, 4),
+        "risk_level": risk_level,
+        "direct_score": round(direct_score, 6),
+        "propagated_score": round(propagated_score, 6),
+        "total_score": round(total_score, 6),
         "price_change_pct": round(price_change_pct(summary), 4) if price_change_pct(summary) is not None else None,
-        "event_count": len(events),
-        "strongest_event_type": strongest.get("event_type", ""),
-        "strongest_event_score": round(float(strongest.get("event_score", 0.0) or 0.0), 4) if strongest else 0.0,
-        "top_driver_titles": [event.get("article_title", "") for event in sorted_events[:3]],
-        "explanation": explanation,
+        "event_count": len(event_facts),
+        "propagation_count": len(propagation_facts),
+        "rules_fired": rules_fired,
+        "top_driver_titles": [fact.get("article_title", "") for fact in top_direct[:3]],
+        "explanation": f"{symbol} is {signal}: " + "; ".join(explanation_parts),
     }
 
 
@@ -391,8 +587,9 @@ def format_signal_line(score: dict[str, Any]) -> str:
     move = score.get("price_change_pct")
     move_text = f"{move:+.2f}%" if isinstance(move, (int, float)) else "n/a"
     return (
-        f"{score['symbol']:>5}  {score['signal']:<7}  score={score['total_score']:+.3f}  "
-        f"move={move_text}  events={score['event_count']}  top={score['strongest_event_type'] or 'none'}"
+        f"{score['symbol']:>5}  {score['signal']:<7}  total={score['total_score']:+.3f}  "
+        f"direct={score['direct_score']:+.3f}  prop={score['propagated_score']:+.3f}  "
+        f"move={move_text}  rules={','.join(score['rules_fired']) or 'none'}"
     )
 
 
@@ -415,23 +612,28 @@ def run_pipeline(
 
     article_rows: list[dict[str, Any]] = []
     event_rows: list[dict[str, Any]] = []
-    score_rows: list[dict[str, Any]] = []
+    propagation_rows: list[dict[str, Any]] = []
+    signal_rows: list[dict[str, Any]] = []
     warnings: list[str] = []
+    per_symbol_facts: dict[str, list[dict[str, Any]]] = {}
+    price_summaries: dict[str, dict[str, Any]] = {}
 
     for symbol in symbols:
         try:
             yahoo_raw = fetch_yahoo_chart(symbol)
             price_summary = summarize_yahoo_chart(yahoo_raw)
         except Exception as exc:  # noqa: BLE001
-            price_summary = {"symbol": symbol, "name": "", "instrument_type": "stock"}
+            price_summary = {"symbol": symbol, "name": symbol, "instrument_type": "stock"}
             warnings.append(f"Yahoo Finance failed for {symbol}: {exc}")
+        price_summaries[symbol] = price_summary
 
         tavily_query = build_tavily_query(symbol, price_summary)
         tavily_data = call_tavily(tavily_key, tavily_query)
         tavily_answer = str(tavily_data.get("answer", "")).strip()
-        articles = normalize_articles(symbol, tavily_data, tavily_query)[:results_per_symbol]
+        raw_articles = normalize_articles(symbol, tavily_data, tavily_query)
+        selected_articles, rejected_articles = filter_articles(raw_articles, results_per_symbol)
 
-        for article in articles:
+        for article in selected_articles + rejected_articles:
             article_rows.append(
                 {
                     "run_id": run_id,
@@ -444,77 +646,142 @@ def run_pipeline(
                     "domain": article["domain"],
                     "rank": article["rank"],
                     "source_score": article["source_score"],
+                    "quality_score": article.get("quality_score", 0.0),
+                    "kept": bool(article.get("kept", False)),
+                    "filter_reason": article.get("filter_reason", ""),
                     "snippet": article["snippet"],
                     "raw_json": json_dumps(article["raw_result"]),
                 }
             )
 
-        events: list[dict[str, Any]] = []
-        if gemini_key and articles:
+        facts: list[dict[str, Any]] = []
+        if gemini_key and selected_articles:
             try:
-                events = extract_events_with_gemini(symbol, price_summary, articles, gemini_key)
+                facts = extract_facts_with_gemini(symbol, price_summary, selected_articles, gemini_key)
+            except subprocess.CalledProcessError as exc:
+                details = f"{exc.stdout}\n{exc.stderr}".lower()
+                if "quota" in details or "429" in details or "resource_exhausted" in details:
+                    warnings.append(f"Gemini quota exhausted for {symbol}; falling back to keywords.")
+                else:
+                    warnings.append(f"Gemini extraction failed for {symbol}; falling back to keywords: {exc}")
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"Gemini extraction failed for {symbol}; falling back to keywords: {exc}")
 
-        if not events:
-            events = extract_events_with_keywords(symbol, articles)
+        if not facts:
+            facts = extract_facts_with_keywords(symbol, selected_articles)
 
-        for event in events:
-            event_rows.append(
-                {
-                    "run_id": run_id,
-                    "watchlist": watchlist_name,
-                    "symbol": symbol,
-                    "article_title": event["article_title"],
-                    "source_url": event["source_url"],
-                    "event_type": event["event_type"],
-                    "direction": event["direction"],
-                    "severity": event["severity"],
-                    "relevance": event["relevance"],
-                    "confidence": event["confidence"],
-                    "horizon": event["horizon"],
-                    "source_score": event["source_score"],
-                    "event_score": round(float(event["event_score"]), 6),
-                    "rationale": event["rationale"],
-                    "extractor": event["extractor"],
-                }
-            )
+        per_symbol_facts[symbol] = facts
 
-        score = summarize_symbol(symbol, price_summary, events)
+    all_event_facts = [fact for facts in per_symbol_facts.values() for fact in facts]
+    propagation_facts = build_propagation_facts(all_event_facts, symbols)
+    extractors_used = sorted({str(fact.get("extractor", "unknown")) for fact in all_event_facts})
+
+    for fact in all_event_facts:
+        event_rows.append(
+            {
+                "run_id": run_id,
+                "watchlist": watchlist_name,
+                "symbol": fact["symbol"],
+                "article_title": fact["article_title"],
+                "source_url": fact["source_url"],
+                "entity_name": fact["entity_name"],
+                "event_type": fact["event_type"],
+                "severity_label": fact["severity_label"],
+                "severity_score": fact["severity_score"],
+                "confidence": fact["confidence"],
+                "sentiment_score": fact["sentiment_score"],
+                "direction": fact["direction"],
+                "time_horizon": fact["time_horizon"],
+                "macro_theme": fact["macro_theme"],
+                "region": fact["region"],
+                "affected_sectors": fact["affected_sectors"],
+                "source_score": fact["source_score"],
+                "quality_score": fact["quality_score"],
+                "base_event_score": fact["base_event_score"],
+                "summary": fact["summary"],
+                "extractor": fact["extractor"],
+            }
+        )
+
+    for fact in propagation_facts:
+        propagation_rows.append(
+            {
+                "run_id": run_id,
+                "watchlist": watchlist_name,
+                **fact,
+            }
+        )
+
+    for symbol in symbols:
+        direct_facts = [fact for fact in all_event_facts if fact["symbol"] == symbol]
+        downstream = [fact for fact in propagation_facts if fact["target_symbol"] == symbol]
+        score = summarize_symbol(symbol, price_summaries.get(symbol, {"name": symbol}), direct_facts, downstream)
         score["run_id"] = run_id
         score["watchlist"] = watchlist_name
-        score_rows.append(score)
+        signal_rows.append(score)
 
-    score_rows.sort(key=lambda item: float(item["total_score"]), reverse=True)
+    signal_rows.sort(key=lambda item: float(item["total_score"]), reverse=True)
+    sector_alerts = build_sector_alerts(all_event_facts, propagation_facts)
+    sector_alert_rows = [{"run_id": run_id, "watchlist": watchlist_name, **alert} for alert in sector_alerts]
+
     summary = {
         "run_id": run_id,
         "watchlist": watchlist_name,
         "symbols": symbols,
-        "extractor_mode": "gemini" if gemini_key else "keyword_rules",
+        "extractor_mode": "+".join(extractors_used) if extractors_used else ("gemini_unavailable" if gemini_key else "keyword_rules"),
         "article_count": len(article_rows),
-        "event_count": len(event_rows),
-        "top_longs": [row["symbol"] for row in score_rows if row["signal"] == "long"][:3],
-        "top_shorts": [row["symbol"] for row in score_rows if row["signal"] == "short"][:3],
+        "event_fact_count": len(event_rows),
+        "propagation_fact_count": len(propagation_rows),
+        "signal_count": len(signal_rows),
+        "sector_alert_count": len(sector_alert_rows),
+        "top_longs": [row["symbol"] for row in signal_rows if row["signal"] == "long"][:3],
+        "top_shorts": [row["symbol"] for row in signal_rows if row["signal"] == "short"][:3],
         "warnings": warnings,
     }
 
     write_jsonl(run_dir / "articles_raw.jsonl", article_rows)
+    write_jsonl(run_dir / "event_facts.jsonl", event_rows)
+    write_jsonl(run_dir / "propagation_facts.jsonl", propagation_rows)
+    write_jsonl(run_dir / "signal_outputs.jsonl", signal_rows)
+    write_jsonl(run_dir / "sector_alerts.jsonl", sector_alert_rows)
     write_jsonl(run_dir / "events_extracted.jsonl", event_rows)
-    write_jsonl(run_dir / "ticker_scores.jsonl", score_rows)
+    write_jsonl(run_dir / "ticker_scores.jsonl", signal_rows)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     if raw:
-        print(json.dumps({"summary": summary, "scores": score_rows}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "summary": summary,
+                    "signals": signal_rows,
+                    "sector_alerts": sector_alert_rows,
+                },
+                indent=2,
+            )
+        )
         return 0
 
     print(f"Run ID: {run_id}")
     print(f"Watchlist: {watchlist_name} ({', '.join(symbols)})")
-    print(f"Extractor mode: {'Gemini JSON' if gemini_key else 'Keyword fallback'}")
+    if extractors_used:
+        print(f"Extractor mode: {' + '.join(extractors_used)}")
+    else:
+        print(f"Extractor mode: {'Gemini unavailable or no material facts' if gemini_key else 'keyword_rules'}")
     print(f"Output dir: {run_dir}")
     print("\nSignals")
     print("-------")
-    for row in score_rows:
+    for row in signal_rows:
         print(format_signal_line(row))
+
+    if sector_alert_rows:
+        print("\nSector Alerts")
+        print("-------------")
+        for alert in sector_alert_rows[:5]:
+            print(
+                f"{alert['sector']:<24} {alert['alert_level']:<15} "
+                f"score={alert['score']:+.3f} theme={alert['macro_theme']} "
+                f"symbols={','.join(alert['affected_symbols'])}"
+            )
 
     if warnings:
         print("\nWarnings")

@@ -1,0 +1,28 @@
+% Example Prometheux/Vadalog rules for the News2Signal fact schema.
+% This file is illustrative and mirrors the active Python rules.
+
+high_risk_symbol(Symbol) :-
+  event_fact(Symbol, EventType, Severity, Confidence, Sentiment),
+  Severity = "high",
+  Confidence > 0.7,
+  Sentiment < -0.6,
+  material_negative_event(EventType).
+
+material_negative_event("supply_disruption").
+material_negative_event("regulatory_probe").
+material_negative_event("guidance_cut").
+material_negative_event("earnings_miss").
+
+downstream_contagion(Target) :-
+  propagation_fact(Source, Target, EventType, Impact),
+  Impact < -0.2,
+  systemic_event(EventType).
+
+systemic_event("supply_disruption").
+systemic_event("regulatory_probe").
+systemic_event("macro_theme").
+
+sector_alert(Sector) :-
+  affected_symbol_in_sector(Sector, Symbol1),
+  affected_symbol_in_sector(Sector, Symbol2),
+  Symbol1 != Symbol2.
