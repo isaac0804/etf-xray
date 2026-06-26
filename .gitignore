@@ -8,3 +8,5 @@ venv/
 .env.*
 *.log
 .DS_Store
+runs/
+src/app/api/og/

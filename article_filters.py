@@ -12,6 +12,8 @@ BLOCKED_DOMAINS = {
     "youtu.be",
     "video.yahoo.com",
     "public.com",
+    "www.otcmarkets.com",
+    "www.bitget.com",
 }
 
 DOMAIN_WEIGHTS = {
@@ -63,11 +65,38 @@ REJECT_TITLE_PATTERNS = [
     re.compile(r"stock price, quote, news & analysis", re.IGNORECASE),
 ]
 
+NOISE_TITLE_PATTERNS = [
+    re.compile(r"\boverview\b", re.IGNORECASE),
+    re.compile(r"\bprice prediction\b", re.IGNORECASE),
+    re.compile(r"\bshare price\b", re.IGNORECASE),
+    re.compile(r"\bquote\b", re.IGNORECASE),
+    re.compile(r"\bmarket cap\b", re.IGNORECASE),
+    re.compile(r"\b(?:earnings|stock)\s+preview\b", re.IGNORECASE),
+    re.compile(r"\blatest news\b", re.IGNORECASE),
+]
+
+LOW_SIGNAL_TITLE_PATTERNS = [
+    re.compile(r"\bwhat wall street analysts are saying\b", re.IGNORECASE),
+    re.compile(r"\banalysts?\s+say\b", re.IGNORECASE),
+    re.compile(r"\btop stocks?\b", re.IGNORECASE),
+    re.compile(r"\bwhy .* stock\b", re.IGNORECASE),
+]
+
+HARD_REJECT_TITLE_PATTERNS = [
+    re.compile(r"\boverview\b", re.IGNORECASE),
+    re.compile(r"\bstock news\b", re.IGNORECASE),
+    re.compile(r"\bcorporation update\b", re.IGNORECASE),
+    re.compile(r"\bcompany update\b", re.IGNORECASE),
+    re.compile(r"\bcompany profile\b", re.IGNORECASE),
+]
+
 ROOT_QUOTE_PATTERNS = [
     re.compile(r"^/quote/[^/]+/?$", re.IGNORECASE),
     re.compile(r"^/markets/companies/[^/]+/?$", re.IGNORECASE),
     re.compile(r"^/symbol/[^/]+/?$", re.IGNORECASE),
     re.compile(r"^/quotes/[^/]+/?$", re.IGNORECASE),
+    re.compile(r"^/stock/[^/]+/news/?$", re.IGNORECASE),
+    re.compile(r"^/english/latest-news/?$", re.IGNORECASE),
 ]
 
 
@@ -115,6 +144,14 @@ def classify_article(article: dict[str, object]) -> tuple[bool, str, float]:
         if pattern.search(title) and not has_event:
             return False, "non_article_title", 0.0
 
+    for pattern in HARD_REJECT_TITLE_PATTERNS:
+        if pattern.search(title):
+            return False, "digest_or_update_page", 0.0
+
+    for pattern in NOISE_TITLE_PATTERNS:
+        if pattern.search(title) and not has_event:
+            return False, "title_looks_like_overview", 0.0
+
     quality = source_score * domain_weight(domain)
     if has_event:
         quality += 0.22
@@ -122,11 +159,17 @@ def classify_article(article: dict[str, object]) -> tuple[bool, str, float]:
         quality += 0.12
     if re.search(r"/\d{4}/\d{2}/\d{2}/", path):
         quality += 0.12
+    if any(pattern.search(title) for pattern in LOW_SIGNAL_TITLE_PATTERNS):
+        quality -= 0.15
+    if any(pattern.search(title) for pattern in NOISE_TITLE_PATTERNS):
+        quality -= 0.10
 
     quality = max(0.0, min(1.0, quality))
 
     if quality < 0.46 and not has_event:
         return False, "low_quality_non_event", quality
+    if quality < 0.55 and any(pattern.search(title) for pattern in LOW_SIGNAL_TITLE_PATTERNS) and not has_event:
+        return False, "low_signal_commentary", quality
 
     return True, "accepted", quality
 
@@ -159,10 +202,22 @@ def filter_articles(
     fallback = []
     for article in articles:
         url = str(article.get("url", "")).strip()
+        title = str(article.get("title", "")).strip()
+        snippet = str(article.get("snippet", "")).strip()
         domain = str(article.get("domain", "")).strip().lower()
+        path = urlparse(url).path or ""
+        has_event = text_has_event_keyword(title, snippet)
         if domain in BLOCKED_DOMAINS:
             continue
-        if any(pattern.search(urlparse(url).path or "") for pattern in ROOT_QUOTE_PATTERNS):
+        if any(pattern.search(path) for pattern in ROOT_QUOTE_PATTERNS):
+            continue
+        if any(pattern.search(title) for pattern in HARD_REJECT_TITLE_PATTERNS):
+            continue
+        if any(pattern.search(title) for pattern in REJECT_TITLE_PATTERNS) and not has_event:
+            continue
+        if any(pattern.search(title) for pattern in NOISE_TITLE_PATTERNS) and not has_event:
+            continue
+        if not has_event and float(article.get("source_score", 0.0) or 0.0) < 0.65:
             continue
         enriched = dict(article)
         enriched["filter_reason"] = "fallback_keep"

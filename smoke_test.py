@@ -12,6 +12,7 @@ from ask_gemini import call_gemini, extract_text, get_api_key
 from event_strategy import run_pipeline
 from market_data import fetch_yahoo_chart, summarize_yahoo_chart
 from propagation_graph import build_propagation_facts
+from prometheux_support import get_jarvispy_url, get_prometheux_token, get_user_role
 from search_tavily import ENV_PATH, call_tavily, load_dotenv
 
 
@@ -20,6 +21,7 @@ def run_component_tests() -> int:
 
     tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
     gemini_key = get_api_key()
+    pmtx_token = get_prometheux_token()
 
     print("News2Signal smoke test\n")
 
@@ -32,6 +34,15 @@ def run_component_tests() -> int:
         print("PASS: GEMINI_API_KEY present")
     else:
         print("WARN: GEMINI_API_KEY missing, Gemini test will be skipped")
+
+    if pmtx_token:
+        resolved_url = get_jarvispy_url()
+        if not resolved_url:
+            print("FAIL: PMTX_TOKEN present but JARVISPY_URL could not be resolved")
+            return 6
+        print(f"PASS: Prometheux URL resolved to {resolved_url}")
+    else:
+        print("WARN: PMTX_TOKEN missing, Prometheux test will be skipped")
 
     try:
         yahoo = summarize_yahoo_chart(fetch_yahoo_chart("NVDA"))
@@ -63,6 +74,19 @@ def run_component_tests() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f"FAIL: Gemini test failed: {exc}")
             return 4
+
+    if pmtx_token:
+        try:
+            role_response = get_user_role()
+            role = role_response.get("data", {}).get("role", "unknown")
+            print(f"PASS: Prometheux returned platform role {role}")
+        except subprocess.CalledProcessError as exc:
+            body = f"{exc.stdout}\n{exc.stderr}".strip()
+            print(f"FAIL: Prometheux test failed: {body or exc}")
+            return 7
+        except Exception as exc:  # noqa: BLE001
+            print(f"FAIL: Prometheux test failed: {exc}")
+            return 7
 
     synthetic_facts = [
         {

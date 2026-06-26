@@ -173,20 +173,34 @@ def write_to_clickhouse(score_rows: list, watchlist_name: str, run_id: str) -> N
 # ── Replace curl-based call_gemini with native urllib ─────────────────────────
 
 def _call_gemini_native(api_key: str, prompt: str, model: str | None = None) -> dict:
-    model_name = model or _ask_gemini.get_model()
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model_name}:generateContent"
-    )
-    payload = _ask_gemini.build_payload(prompt)
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode())
+    candidates = _ask_gemini.get_model_candidates(model)
+    last_error: urllib.error.HTTPError | None = None
+    for model_name in candidates:
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_name}:generateContent"
+        )
+        payload = _ask_gemini.build_payload(prompt)
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode())
+                if isinstance(data, dict):
+                    data["_model_used"] = model_name
+                return data
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code in (429, 503):  # quota / overload — try next candidate
+                continue
+            raise
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No Gemini models available to try.")
 
 _event_strategy.call_gemini = _call_gemini_native
 
@@ -401,18 +415,14 @@ try:
         d_facts = direct_by_symbol.get(sym, [])
         p_facts = prop_by_target.get(sym, [])
         price_summary = res.price_summary if res else {"symbol": sym, "name": sym}
-        score = summarize_symbol(
-            sym,
-            {"name": next((f.get("entity_name", sym) for f in d_facts), price_summary.get("name", sym)),
-             "close_series": []},
-            d_facts, p_facts,
-        )
+        score = summarize_symbol(sym, price_summary, d_facts, p_facts)
         score["run_id"] = run_id
         score["watchlist"] = watchlist_name
 
-        # Augment with URL and strongest event type (summarize_symbol doesn't include these)
+        # dominant_event_type is now returned by summarize_symbol; alias for cache compat
+        score["strongest_event_type"] = score.get("dominant_event_type", "")
+        # top_driver_urls not returned by summarize_symbol — compute from raw facts
         top_direct_sorted = sorted(d_facts, key=lambda f: abs(float(f.get("base_event_score", 0.0) or 0.0)), reverse=True)
-        score["strongest_event_type"] = top_direct_sorted[0].get("event_type", "") if top_direct_sorted else ""
         score["top_driver_urls"] = [f.get("source_url", "") for f in top_direct_sorted[:3]]
 
         score_rows.append(score)
