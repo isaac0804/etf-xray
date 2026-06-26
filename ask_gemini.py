@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal Gemini REST probe for ETF/QIS follow-up questions."""
+"""Minimal Gemini REST probe for generic market/event follow-up questions."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from search_tavily import ENV_PATH, load_dotenv
 
 DEFAULT_MODEL = "gemini-3.5-flash"
 DEFAULT_PROMPT = (
-    "Explain in plain English why ETF concentration risk matters, using QQQ "
-    "as the example, in 4 short bullet points."
+    "Summarize whether recent news flow is bullish or bearish for NVDA in 4 "
+    "short bullet points."
 )
 
 

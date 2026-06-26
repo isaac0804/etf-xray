@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small HTTP helpers for Yahoo Finance and Alpha Vantage ETF probes."""
+"""Small HTTP helpers for Yahoo Finance and Alpha Vantage market-data probes."""
 
 from __future__ import annotations
 
