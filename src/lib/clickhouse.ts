@@ -13,7 +13,8 @@ function getClient(): ClickHouseClient {
     url:      `${proto}://${host}:${port}`,
     username: process.env.CLICKHOUSE_USER ?? "default",
     password: process.env.CLICKHOUSE_PASSWORD ?? "",
-    database: DB,
+    // No database: connect to default; queries use fully-qualified names
+    // so the client works before etf_xray DB is created by the first Python scan
     request_timeout: 5000,
   });
   return _client;
