@@ -1,0 +1,13 @@
+{
+  "run_id": "0939a686a85588f6",
+  "watchlist": "custom",
+  "symbols": [
+    "NVDA"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 2,
+  "event_count": 0,
+  "top_longs": [],
+  "top_shorts": [],
+  "warnings": []
+}

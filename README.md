@@ -1,25 +1,26 @@
-# Tavily Mini ETF Probe
+# News2Signal
 
-Tiny CLI to test whether Tavily alone can answer ETF/QIS-style questions well
-enough for a hackathon MVP.
+Tiny event-driven signal engine for a hackathon build.
+
+It uses:
+
+- `Tavily` to retrieve recent market-moving news
+- `Gemini` to extract structured events when a key is available
+- deterministic Python rules as a fallback extractor and scorer
+- `Yahoo Finance` for quick no-key price snapshots
+- `ClickHouse` as the storage/analytics layer via JSONEachRow-ready outputs
 
 ## What it does
 
-- Calls Tavily Search directly over HTTP
-- Calls Gemini directly over REST
-- Calls Yahoo Finance's public chart endpoint for no-key price snapshots
-- Calls Alpha Vantage for ETF holdings, sectors, and fallback price data
-- Uses the `finance` topic by default
-- Prints Tavily's answer plus the top result snippets
-- Can tighten broad Tavily output into a short ETF brief
+- scans a watchlist such as `mag7`, `semis`, `energy`, or `banks`
+- retrieves recent articles for each symbol
+- extracts event types like `earnings_miss`, `guidance_cut`, or `regulatory_probe`
+- scores each symbol into `long`, `short`, or `neutral`
+- writes run outputs to local JSONL files ready for ClickHouse import
 
 ## Setup
 
-1. Get a Tavily API key from [Tavily](https://app.tavily.com/).
-2. Get a Gemini API key from Google AI Studio.
-   The hackathon doc says to log into the temporary account, import the project
-   if needed, then open AI Studio API keys and copy or create the key.
-3. Put both keys in [`.env`](/Users/jc/coding/tavily-mini-etf/.env):
+Put your keys in [`.env`](/Users/jc/coding/news2signal/.env):
 
 ```bash
 TAVILY_API_KEY="tvly-..."
@@ -28,154 +29,168 @@ GEMINI_MODEL="gemini-3.5-flash"
 ALPHA_VANTAGE_API_KEY=""
 ```
 
-Alternative: export it in your shell:
+Notes:
+
+- `Tavily` is required for the main pipeline.
+- `Gemini` is optional. If missing, the engine falls back to deterministic keyword rules.
+- `Yahoo Finance` needs no key for the chart endpoint used here.
+- `Alpha Vantage` is optional utility data, not critical path for the event strategy.
+
+## Main Run
+
+Run the generic event strategy on a preset watchlist:
 
 ```bash
-export TAVILY_API_KEY="tvly-..."
-export GEMINI_API_KEY="AIza..."
-export ALPHA_VANTAGE_API_KEY="..."
+python3 event_strategy.py --watchlist mag7
 ```
 
-## Run
-
-Default ETF-themed query:
+Run it on custom symbols:
 
 ```bash
-python3 search_tavily.py
+python3 event_strategy.py NVDA AMD AVGO
 ```
 
-Custom query:
+Limit Tavily results per symbol:
 
 ```bash
-python3 search_tavily.py "What are the latest disclosed top holdings of QQQ and SPY?"
+python3 event_strategy.py --watchlist semis --results 3
 ```
 
-Raw JSON:
+Print raw JSON summary:
 
 ```bash
-python3 search_tavily.py --raw "Why did QQQ move this week?"
+python3 event_strategy.py --watchlist mag7 --raw
 ```
 
-Gemini-only sanity check:
+Run a one-command smoke test:
 
 ```bash
-python3 ask_gemini.py "Explain why concentration risk matters in QQQ."
+python3 smoke_test.py
 ```
 
-Tiny Tavily -> Gemini ETF brief:
+Run the smoke test plus a full one-symbol pipeline:
 
 ```bash
-python3 etf_brief.py "QQQ and SPY"
+python3 smoke_test.py --full
 ```
 
-Yahoo Finance price snapshot:
+## Output
+
+Each run writes files under:
+
+[`runs/`](/Users/jc/coding/news2signal/runs)
+
+with a random run id, including:
+
+- `articles_raw.jsonl`
+- `events_extracted.jsonl`
+- `ticker_scores.jsonl`
+- `summary.json`
+
+These files are already shaped for easy ClickHouse ingestion.
+
+## ClickHouse
+
+Create the tables with:
+
+[`clickhouse_schema.sql`](/Users/jc/coding/news2signal/clickhouse_schema.sql)
+
+Then import each run file with `JSONEachRow`, for example:
+
+```sql
+INSERT INTO articles_raw FORMAT JSONEachRow
+```
+
+```sql
+INSERT INTO events_extracted FORMAT JSONEachRow
+```
+
+```sql
+INSERT INTO ticker_scores FORMAT JSONEachRow
+```
+
+If you use `clickhouse-client`, the shell pattern is typically:
 
 ```bash
-python3 probe_yahoo_finance.py QQQ
+clickhouse-client --query="INSERT INTO ticker_scores FORMAT JSONEachRow" < runs/<run_id>/ticker_scores.jsonl
 ```
 
-Alpha Vantage ETF profile:
+## Preset Watchlists
+
+- `mag7`
+- `semis`
+- `energy`
+- `banks`
+- `indices`
+
+The preset definitions live in [watchlists.py](/Users/jc/coding/news2signal/watchlists.py).
+
+## Strategy Logic
+
+The pipeline is intentionally simple and explainable:
+
+1. `Tavily` retrieves recent articles per symbol.
+2. `Gemini` extracts structured events into strict JSON when available.
+3. If Gemini is unavailable, deterministic keyword rules classify the headlines.
+4. Each event gets a score:
+
+```text
+score =
+direction
+* event_type_multiplier
+* severity
+* relevance
+* confidence
+* source_score
+```
+
+5. Symbol scores are summed and turned into:
+
+- `long` if score >= `0.75`
+- `short` if score <= `-0.75`
+- `neutral` otherwise
+
+## Prometheux Fit
+
+This repo currently implements the deterministic layer in plain Python because
+that is the fastest path in a hackathon.
+
+`Prometheux` would be the natural upgrade for:
+
+- event taxonomy and ontology
+- article -> company -> sector relationships
+- deduplication of repeated stories
+- rule enforcement such as confidence thresholds
+- traceability from final signal back to source article and rule
+
+In other words:
+
+- `Gemini` says what likely happened
+- `Prometheux` would formalize what that means
+- `ClickHouse` stores the event stream and signals
+
+## Utility Probes
+
+Tavily:
+
+```bash
+python3 search_tavily.py "Latest market-moving headlines for NVDA stock"
+```
+
+Gemini:
+
+```bash
+python3 ask_gemini.py "Is recent NVDA news flow bullish or bearish?"
+```
+
+Yahoo Finance:
+
+```bash
+python3 probe_yahoo_finance.py NVDA
+```
+
+Alpha Vantage:
 
 ```bash
 python3 probe_alpha_vantage.py QQQ
 ```
-
-Alpha Vantage daily prices:
-
-```bash
-python3 probe_alpha_vantage.py --daily IBM
-```
-
-## Simplest API Shape
-
-If you want to sanity-check Tavily without the Python wrapper, the core request is:
-
-```bash
-curl -sS https://api.tavily.com/search \
-  -H "Content-Type: application/json" \
-  -d '{
-    "api_key": "tvly-...",
-    "query": "What are the top holdings of QQQ?",
-    "topic": "finance",
-    "search_depth": "basic",
-    "max_results": 3,
-    "include_answer": true
-  }'
-```
-
-The current official Gemini docs use the `generateContent` endpoint with an
-`x-goog-api-key` header. The minimal shape is:
-
-```bash
-curl --fail-with-body -sS \
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent' \
-  -H "x-goog-api-key: $GEMINI_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "contents": [
-      {
-        "parts": [
-          {"text": "Explain why concentration risk matters in QQQ."}
-        ]
-      }
-    ]
-  }'
-```
-
-Yahoo Finance in this project uses the public chart endpoint, which currently
-works without an API key when called with browser-style headers:
-
-```bash
-curl -sS \
-  'https://query2.finance.yahoo.com/v8/finance/chart/QQQ?range=5d&interval=1d' \
-  -H 'User-Agent: Mozilla/5.0' \
-  -H 'Accept: application/json'
-```
-
-Alpha Vantage uses its official `ETF_PROFILE` endpoint for ETF holdings and
-sector weights. The docs currently show a working `demo` example for `QQQ`, so
-you can test the project without your own key for that narrow case:
-
-```bash
-curl -sS \
-  'https://www.alphavantage.co/query?function=ETF_PROFILE&symbol=QQQ&apikey=demo'
-```
-
-For broader or repeated usage, add your own `ALPHA_VANTAGE_API_KEY`.
-
-## ClickHouse Cloud
-
-Best tiny use: treat ClickHouse as a fast cache and analytics layer for this
-demo, not as a full market-data platform.
-
-In 5 hours, the best sponsor-friendly use is:
-
-- store each Tavily/Gemini run
-- store each returned search result as its own row
-- query which ETFs, domains, and concentration themes show up most often
-
-The starter schema is in [clickhouse_schema.sql](/Users/jc/coding/tavily-mini-etf/clickhouse_schema.sql).
-
-Why this is a good fit:
-
-- ClickHouse Cloud is positioned by ClickHouse as a fully managed way to build
-  real-time analytics and AI-powered data apps
-- the Cloud page highlights the SQL console, import wizard, and ClickPipes, so
-  it is well-suited to quick demo analytics rather than heavy infra work
-
-For this project, I would not spend hackathon time building a deep ingestion
-stack unless the rest is already working.
-
-## Why this exists
-
-Before we touch any non-sponsor market-data API, this lets us answer one question
-fast:
-
-`Can Tavily alone get us enough ETF explanation data for a tiny demo?`
-
-If the answer is "not really", then the smallest upgrade path is:
-
-- keep Tavily for sponsor-aligned retrieval
-- use Gemini to compress and structure the answer
-- use Yahoo Finance for no-key price context
-- use Alpha Vantage for ETF holdings and sector structure

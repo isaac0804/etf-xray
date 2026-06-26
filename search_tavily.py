@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal Tavily search probe for ETF/QIS questions."""
+"""Minimal Tavily search probe for generic market/event questions."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import urllib.request
 
 API_URL = "https://api.tavily.com/search"
 DEFAULT_QUERY = (
-    "can you check the ETF holdings of QQQ yesterday?"
+    "What are the latest market-moving headlines for NVDA stock?"
 )
 PROJECT_DIR = Path(__file__).resolve().parent
 ENV_PATH = PROJECT_DIR / ".env"

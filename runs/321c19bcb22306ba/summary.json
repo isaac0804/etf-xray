@@ -1,0 +1,13 @@
+{
+  "run_id": "321c19bcb22306ba",
+  "watchlist": "custom",
+  "symbols": [
+    "NVDA"
+  ],
+  "extractor_mode": "keyword_rules",
+  "article_count": 2,
+  "event_count": 0,
+  "top_longs": [],
+  "top_shorts": [],
+  "warnings": []
+}

@@ -1,0 +1,14 @@
+{
+  "run_id": "7a6d0c306eaa0954",
+  "watchlist": "custom",
+  "symbols": [
+    "NVDA",
+    "AMD"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 4,
+  "event_count": 1,
+  "top_longs": [],
+  "top_shorts": [],
+  "warnings": []
+}
