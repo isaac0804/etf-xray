@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Small HTTPS helper for ClickHouse Cloud sync."""
+"""Small HTTPS helper for ClickHouse Cloud sync and query-time evaluation."""
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -59,6 +60,21 @@ def run_clickhouse_query(query: str) -> str:
         timeout=60,
     )
     return result.stdout
+
+
+def clickhouse_quote(value: str) -> str:
+    """Escape a string for simple inline SQL construction."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def run_clickhouse_json(query: str) -> dict[str, object]:
+    """Execute a SELECT and parse ClickHouse JSON output."""
+    statement = query.strip()
+    if not statement.lower().endswith("format json"):
+        statement = f"{statement} FORMAT JSON"
+    output = run_clickhouse_query(statement)
+    data = json.loads(output)
+    return data if isinstance(data, dict) else {}
 
 
 def apply_clickhouse_schema(schema_path: Path) -> None:

@@ -128,6 +128,28 @@ def run_prometheux_request(method: str, path: str, body: dict[str, Any] | None =
     return json.loads(result.stdout)
 
 
+def is_no_active_compute_error(exc: subprocess.CalledProcessError) -> bool:
+    """Return whether Prometheux rejected a request due to missing compute."""
+    details = f"{exc.stdout}\n{exc.stderr}".lower()
+    return "no_active_compute" in details or "no active compute resources" in details
+
+
+def evaluate_vadalog_program(
+    program: str,
+    compute: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Submit a Vadalog program to the platform reasoning engine."""
+    body: dict[str, Any] = {"program": program}
+    if compute:
+        body["compute"] = compute
+    return run_prometheux_request("POST", "/vadalog/evaluate", body)
+
+
+def get_vadalog_status() -> dict[str, Any]:
+    """Return the live Vadalog engine status."""
+    return run_prometheux_request("GET", "/vadalog/status")
+
+
 def get_user_role() -> dict[str, Any]:
     """Fetch the current Prometheux role for the configured token."""
     return run_prometheux_request("GET", "/users/get-role")
