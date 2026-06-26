@@ -28,6 +28,8 @@ TAVILY_API_KEY="tvly-..."
 GEMINI_API_KEY="AIza..."
 GEMINI_MODEL="gemini-3.5-flash"
 ALPHA_VANTAGE_API_KEY=""
+PMTX_TOKEN="eyJ..."
+JARVISPY_URL="https://api.prometheux.ai/jarvispy/your-org/your-user"
 ```
 
 Notes:
@@ -36,8 +38,9 @@ Notes:
 - `Gemini` is optional in practice because the pipeline falls back automatically.
 - `Yahoo Finance` needs no key for the price snapshot endpoint used here.
 - `Alpha Vantage` is optional utility data, not the main event-strategy source.
-- `Prometheux` is not wired live because there is no Prometheux key/config in `.env`.
-- `ClickHouse` is not wired live because there is no ClickHouse connection config in `.env`.
+- `Prometheux` now uses the documented JarvisPy base URL shape.
+- If `JARVISPY_URL` is blank or left as the root host, `probe_prometheux.py` can derive the correct `jarvispy/{org}/{user}` path from the JWT claims inside `PMTX_TOKEN`.
+- `ClickHouse` sync works when the connection settings are present in `.env`.
 
 ## Main Run
 
@@ -92,6 +95,7 @@ The smoke test verifies:
 - Yahoo Finance returns a price snapshot
 - Tavily returns search results
 - Gemini works or gracefully reports quota exhaustion
+- Prometheux returns the current platform role when `PMTX_TOKEN` is present
 - the deterministic propagation graph works
 - the full pipeline runs end-to-end
 
@@ -185,6 +189,10 @@ There is an illustrative rules file here:
 
 [`prometheux_rules.vadalog`](/Users/jc/coding/news2signal/prometheux_rules.vadalog)
 
+There is also a live platform probe here:
+
+[`probe_prometheux.py`](/Users/jc/coding/news2signal/probe_prometheux.py)
+
 ## Utility Probes
 
 Tavily:
@@ -213,4 +221,11 @@ Alpha Vantage:
 ```bash
 cd /Users/jc/coding/news2signal
 python3 probe_alpha_vantage.py QQQ
+```
+
+Prometheux:
+
+```bash
+cd /Users/jc/coding/news2signal
+python3 probe_prometheux.py
 ```

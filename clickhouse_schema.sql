@@ -87,15 +87,28 @@ CREATE TABLE IF NOT EXISTS signal_outputs
     direct_score Float64,
     propagated_score Float64,
     total_score Float64,
+    signal_strength Float64,
+    conviction Float64,
     price_change_pct Nullable(Float64),
+    session_move_pct Nullable(Float64),
+    price_confirmation String,
     event_count UInt16,
     propagation_count UInt16,
+    source_diversity UInt8,
+    dominant_event_type String,
     rules_fired Array(String),
     top_driver_titles Array(String),
     explanation String
 )
 ENGINE = MergeTree
 ORDER BY (run_id, total_score, symbol, ingested_at);
+
+ALTER TABLE signal_outputs ADD COLUMN IF NOT EXISTS signal_strength Float64;
+ALTER TABLE signal_outputs ADD COLUMN IF NOT EXISTS conviction Float64;
+ALTER TABLE signal_outputs ADD COLUMN IF NOT EXISTS session_move_pct Nullable(Float64);
+ALTER TABLE signal_outputs ADD COLUMN IF NOT EXISTS price_confirmation String;
+ALTER TABLE signal_outputs ADD COLUMN IF NOT EXISTS source_diversity UInt8;
+ALTER TABLE signal_outputs ADD COLUMN IF NOT EXISTS dominant_event_type String;
 
 
 CREATE TABLE IF NOT EXISTS sector_alerts

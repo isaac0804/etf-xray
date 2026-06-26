@@ -1,0 +1,1 @@
+{"affected_symbols": ["AMD", "NVDA"], "alert_level": "MEDIUM_POSITIVE", "driver_event_types": ["guidance_raise"], "explanation": "semiconductors has medium_positive event pressure from earnings across 2 symbols.", "macro_theme": "earnings", "run_id": "3d9e192852111f76", "score": 0.306753, "sector": "semiconductors", "watchlist": "custom"}

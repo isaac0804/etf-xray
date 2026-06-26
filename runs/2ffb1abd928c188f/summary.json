@@ -1,0 +1,21 @@
+{
+  "run_id": "2ffb1abd928c188f",
+  "watchlist": "custom",
+  "symbols": [
+    "TSM",
+    "NVDA",
+    "AMD"
+  ],
+  "extractor_mode": "keyword_rules",
+  "article_count": 15,
+  "event_fact_count": 2,
+  "propagation_fact_count": 0,
+  "signal_count": 3,
+  "sector_alert_count": 0,
+  "top_longs": [],
+  "top_shorts": [],
+  "warnings": [
+    "Gemini quota exhausted for TSM; falling back to keywords.",
+    "Gemini quota exhausted for AMD; falling back to keywords."
+  ]
+}

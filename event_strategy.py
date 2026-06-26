@@ -125,6 +125,28 @@ KEYWORD_RULES = [
 ]
 POSITIVE_WORDS = {"surge", "gain", "strong", "wins", "expands", "growth", "record", "bullish"}
 NEGATIVE_WORDS = {"drop", "weak", "falls", "cuts", "risk", "delay", "bearish", "concern"}
+LOW_SIGNAL_EVENT_TYPES = {
+    "analyst_upgrade",
+    "analyst_downgrade",
+    "generic_positive",
+    "generic_negative",
+    "product_launch",
+    "partnership",
+    "mna",
+}
+SYSTEMIC_EVENT_TYPES = {
+    "supply_disruption",
+    "regulatory_probe",
+    "guidance_cut",
+    "guidance_raise",
+    "earnings_miss",
+    "earnings_beat",
+    "litigation",
+    "capex",
+    "demand_signal",
+}
+DIRECT_GROUP_WEIGHTS = (1.0, 0.55, 0.30)
+PROPAGATION_WEIGHTS = (1.0, 0.45, 0.20)
 
 
 def parse_args(argv: list[str]) -> tuple[bool, bool, str | None, int, list[str]]:
@@ -179,6 +201,14 @@ def price_change_pct(summary: dict[str, Any]) -> float | None:
     if not isinstance(closes, list) or len(closes) < 2 or not closes[0]:
         return None
     return ((float(closes[-1]) / float(closes[0])) - 1.0) * 100.0
+
+
+def session_price_change_pct(summary: dict[str, Any]) -> float | None:
+    current = summary.get("regular_market_price")
+    previous = summary.get("previous_close")
+    if not isinstance(current, (int, float)) or not isinstance(previous, (int, float)) or previous == 0:
+        return None
+    return ((float(current) / float(previous)) - 1.0) * 100.0
 
 
 def build_tavily_query(symbol: str, summary: dict[str, Any]) -> str:
@@ -252,6 +282,8 @@ def build_gemini_fact_prompt(symbol: str, summary: dict[str, Any], articles: lis
         "Rules:",
         "- Use only the supplied evidence.",
         "- Ignore profile pages, quote pages, and non-event pages.",
+        "- Ignore overview pages, stock commentary, and generic analyst roundups unless there is an explicit upgrade or downgrade event.",
+        "- If the article is mainly about another company and the ticker is only mentioned in passing, omit it.",
         "- If there is no discrete event, omit that article entirely.",
         "- severity_score and confidence must be between 0 and 1.",
         "- sentiment_score must be between -1 and 1.",
@@ -314,6 +346,14 @@ def severity_label_from_score(score: float) -> str:
     return "low"
 
 
+def score_sign(value: float) -> int:
+    if value > 0:
+        return 1
+    if value < 0:
+        return -1
+    return 0
+
+
 def base_event_score(fact: dict[str, Any]) -> float:
     event_type = str(fact.get("event_type", "other"))
     multiplier = EVENT_TYPE_MULTIPLIERS.get(event_type, EVENT_TYPE_MULTIPLIERS["other"])
@@ -325,6 +365,178 @@ def base_event_score(fact: dict[str, Any]) -> float:
     magnitude = abs(sentiment_score) if sentiment_score != 0 else 0.25
     quality_weight = clamp(0.45 + 0.55 * quality_score, 0.35, 1.0)
     return sign * multiplier * severity_score * confidence * magnitude * quality_weight
+
+
+def is_low_signal_event_type(event_type: str) -> bool:
+    return event_type in LOW_SIGNAL_EVENT_TYPES
+
+
+def is_material_fact(fact: dict[str, Any]) -> bool:
+    event_type = str(fact.get("event_type", "other"))
+    abs_score = abs(float(fact.get("base_event_score", 0.0) or 0.0))
+    quality_score = clamp(float(fact.get("quality_score", 0.0) or 0.0), 0.0, 1.0)
+    confidence = clamp(float(fact.get("confidence", 0.0) or 0.0), 0.0, 1.0)
+    severity_score = clamp(float(fact.get("severity_score", 0.0) or 0.0), 0.0, 1.0)
+
+    threshold = 0.10
+    min_quality = 0.42
+    if is_low_signal_event_type(event_type):
+        threshold = 0.16
+        min_quality = 0.50
+
+    return abs_score >= threshold and quality_score >= min_quality and confidence >= 0.50 and severity_score >= 0.40
+
+
+def fact_domain(fact: dict[str, Any]) -> str:
+    return urlparse(str(fact.get("source_url", "")).strip()).netloc.lower()
+
+
+def dedupe_event_facts(event_facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str, int], dict[str, Any]] = {}
+    for fact in event_facts:
+        sign = score_sign(float(fact.get("base_event_score", 0.0) or 0.0))
+        key = (
+            str(fact.get("source_url", "")).strip(),
+            str(fact.get("event_type", "other")).strip(),
+            sign,
+        )
+        current = buckets.get(key)
+        if current is None or abs(float(fact.get("base_event_score", 0.0) or 0.0)) > abs(
+            float(current.get("base_event_score", 0.0) or 0.0)
+        ):
+            buckets[key] = fact
+    return list(buckets.values())
+
+
+def price_confirmation_factor(score: float, session_move_pct: float | None) -> tuple[float, str]:
+    if score == 0 or session_move_pct is None or abs(session_move_pct) < 1.0:
+        return 1.0, "none"
+
+    if score_sign(score) == score_sign(session_move_pct):
+        return 1.0 + min(0.14, abs(session_move_pct) / 25.0), "confirmed"
+    return max(0.72, 1.0 - min(0.20, abs(session_move_pct) / 18.0)), "diverged"
+
+
+def aggregate_direct_signal(event_facts: list[dict[str, Any]], session_move: float | None) -> dict[str, Any]:
+    candidates = [fact for fact in dedupe_event_facts(event_facts) if is_material_fact(fact)]
+    if not candidates:
+        return {
+            "score": 0.0,
+            "conviction": 0.0,
+            "price_confirmation": "none",
+            "material_count": 0,
+            "source_diversity": 0,
+            "dominant_event_type": "none",
+            "driver_facts": [],
+            "consensus": 0.0,
+            "low_signal_only": False,
+        }
+
+    groups: dict[tuple[str, int, str], list[dict[str, Any]]] = {}
+    for fact in candidates:
+        sign = score_sign(float(fact.get("base_event_score", 0.0) or 0.0))
+        key = (
+            str(fact.get("event_type", "other")).strip(),
+            sign,
+            str(fact.get("macro_theme", "other")).strip(),
+        )
+        groups.setdefault(key, []).append(fact)
+
+    group_rows: list[dict[str, Any]] = []
+    for (event_type, _, macro_theme), facts in groups.items():
+        ordered = sorted(facts, key=lambda item: abs(float(item.get("base_event_score", 0.0) or 0.0)), reverse=True)
+        head = float(ordered[0].get("base_event_score", 0.0) or 0.0)
+        support = sum(float(item.get("base_event_score", 0.0) or 0.0) for item in ordered[1:3]) * 0.35
+        group_rows.append(
+            {
+                "event_type": event_type,
+                "macro_theme": macro_theme,
+                "score": head + support,
+                "count": len(ordered),
+                "top_fact": ordered[0],
+            }
+        )
+
+    group_rows.sort(key=lambda item: abs(float(item["score"])), reverse=True)
+    weighted_raw = 0.0
+    for index, group in enumerate(group_rows[: len(DIRECT_GROUP_WEIGHTS)]):
+        weighted_raw += float(group["score"]) * DIRECT_GROUP_WEIGHTS[index]
+
+    source_diversity = len({fact_domain(fact) for fact in candidates if fact_domain(fact)})
+    signs = [score_sign(float(group["score"])) for group in group_rows if score_sign(float(group["score"])) != 0]
+    consensus = abs(sum(signs)) / len(signs) if signs else 0.0
+    source_factor = 1.0 + 0.05 * max(0, min(3, source_diversity) - 1)
+    consensus_factor = 0.78 + 0.32 * consensus
+    low_signal_only = all(is_low_signal_event_type(str(fact.get("event_type", "other"))) for fact in candidates)
+    style_factor = 0.72 if low_signal_only else 1.0
+    price_factor, price_confirmation = price_confirmation_factor(weighted_raw, session_move)
+
+    final_score = clamp(weighted_raw * source_factor * consensus_factor * style_factor * price_factor, -1.25, 1.25)
+    conviction = clamp(
+        0.28
+        + 0.12 * min(3, len(group_rows))
+        + 0.08 * min(3, source_diversity)
+        + 0.18 * consensus
+        + (0.08 if not low_signal_only else -0.04)
+        + (0.06 if price_confirmation == "confirmed" else -0.04 if price_confirmation == "diverged" else 0.0),
+        0.0,
+        1.0,
+    )
+
+    driver_facts = [group["top_fact"] for group in group_rows[:3]]
+    dominant_event_type = str(group_rows[0]["event_type"]) if group_rows else "none"
+    return {
+        "score": round(final_score, 6),
+        "conviction": round(conviction, 6),
+        "price_confirmation": price_confirmation,
+        "material_count": len(candidates),
+        "source_diversity": source_diversity,
+        "dominant_event_type": dominant_event_type,
+        "driver_facts": driver_facts,
+        "consensus": round(consensus, 6),
+        "low_signal_only": low_signal_only,
+    }
+
+
+def aggregate_propagation_signal(propagation_facts: list[dict[str, Any]], direct_sign: int) -> dict[str, Any]:
+    deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for fact in propagation_facts:
+        score = float(fact.get("impact_score", 0.0) or 0.0)
+        if abs(score) < 0.07:
+            continue
+        key = (
+            str(fact.get("source_symbol", "")),
+            str(fact.get("event_type", "")),
+            str(fact.get("source_url", "")),
+        )
+        current = deduped.get(key)
+        if current is None or abs(score) > abs(float(current.get("impact_score", 0.0) or 0.0)):
+            deduped[key] = fact
+
+    ranked = sorted(deduped.values(), key=lambda item: abs(float(item.get("impact_score", 0.0) or 0.0)), reverse=True)
+    if not ranked:
+        return {"score": 0.0, "count": 0, "top_facts": []}
+
+    weighted_raw = 0.0
+    for index, fact in enumerate(ranked[: len(PROPAGATION_WEIGHTS)]):
+        weighted_raw += float(fact.get("impact_score", 0.0) or 0.0) * PROPAGATION_WEIGHTS[index]
+
+    prop_sign = score_sign(weighted_raw)
+    if direct_sign == 0:
+        weighted_raw *= 0.72
+        cap = 0.24
+    elif prop_sign != 0 and prop_sign != direct_sign:
+        weighted_raw *= 0.45
+        cap = 0.28
+    else:
+        weighted_raw *= 1.05
+        cap = 0.36
+
+    return {
+        "score": round(clamp(weighted_raw, -cap, cap), 6),
+        "count": len(ranked),
+        "top_facts": ranked[:3],
+    }
 
 
 def extract_facts_with_gemini(
@@ -524,48 +736,89 @@ def summarize_symbol(
     event_facts: list[dict[str, Any]],
     propagation_facts: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    direct_score = sum(float(fact.get("base_event_score", 0.0) or 0.0) for fact in event_facts)
-    propagated_score = sum(float(fact.get("impact_score", 0.0) or 0.0) for fact in propagation_facts)
-    total_score = direct_score + propagated_score
+    trend_move_pct = price_change_pct(summary)
+    intraday_move_pct = session_price_change_pct(summary)
+    direct = aggregate_direct_signal(event_facts, intraday_move_pct)
+    direct_score = float(direct["score"])
+    propagated = aggregate_propagation_signal(propagation_facts, score_sign(direct_score))
+    propagated_score = float(propagated["score"])
+    total_score = round(direct_score + propagated_score, 6)
+    conviction = float(direct["conviction"])
+    signal_strength = round(abs(total_score) * (0.65 + 0.35 * conviction), 6)
 
-    if total_score >= 0.55:
+    if abs(total_score) < 0.28:
+        signal = "neutral"
+    elif conviction < 0.42 and abs(total_score) < 0.45:
+        signal = "neutral"
+    elif total_score >= 0.35:
         signal = "long"
-    elif total_score <= -0.55:
+    elif total_score <= -0.35:
         signal = "short"
     else:
         signal = "neutral"
 
-    risk_level = "LOW"
-    if total_score <= -0.75:
-        risk_level = "HIGH"
-    elif total_score <= -0.40:
-        risk_level = "MEDIUM"
-    elif total_score >= 0.75:
-        risk_level = "HIGH_POSITIVE"
-    elif total_score >= 0.40:
-        risk_level = "MEDIUM_POSITIVE"
+    if (
+        signal != "neutral"
+        and int(direct["source_diversity"]) <= 1
+        and str(direct["price_confirmation"]) == "diverged"
+        and abs(total_score) < 0.55
+    ):
+        signal = "neutral"
 
-    top_direct = sorted(event_facts, key=lambda item: abs(float(item.get("base_event_score", 0.0) or 0.0)), reverse=True)
-    top_prop = sorted(propagation_facts, key=lambda item: abs(float(item.get("impact_score", 0.0) or 0.0)), reverse=True)
+    if (
+        signal != "neutral"
+        and bool(direct["low_signal_only"])
+        and int(direct["source_diversity"]) <= 1
+        and abs(total_score) < 0.60
+    ):
+        signal = "neutral"
+
+    risk_level = "LOW"
+    if signal == "short":
+        if abs(total_score) >= 0.75 and conviction >= 0.65:
+            risk_level = "HIGH"
+        elif abs(total_score) >= 0.45:
+            risk_level = "MEDIUM"
+    elif signal == "long":
+        if abs(total_score) >= 0.75 and conviction >= 0.65:
+            risk_level = "HIGH_POSITIVE"
+        elif abs(total_score) >= 0.45:
+            risk_level = "MEDIUM_POSITIVE"
+
+    top_direct = list(direct["driver_facts"])
+    top_prop = list(propagated["top_facts"])
     rules_fired: list[str] = []
+    dominant_event_type = str(direct["dominant_event_type"])
     if top_direct:
         strongest = top_direct[0]
-        if strongest.get("severity_label") == "high" and float(strongest.get("base_event_score", 0.0)) < 0:
+        if strongest.get("severity_label") == "high" and float(strongest.get("base_event_score", 0.0) or 0.0) < 0:
             rules_fired.append("direct_high_severity_event")
-        if strongest.get("event_type") in {"supply_disruption", "regulatory_probe"}:
-            rules_fired.append("systemic_event_type")
-    if top_prop and abs(float(top_prop[0].get("impact_score", 0.0) or 0.0)) >= 0.12:
+        if dominant_event_type in SYSTEMIC_EVENT_TYPES:
+            rules_fired.append("systemic_primary_event")
+    if direct["price_confirmation"] == "confirmed":
+        rules_fired.append("price_confirmed")
+    elif direct["price_confirmation"] == "diverged":
+        rules_fired.append("price_diverged")
+    if top_prop and abs(float(top_prop[0].get("impact_score", 0.0) or 0.0)) >= 0.10:
         rules_fired.append("downstream_contagion")
+    if bool(direct["low_signal_only"]):
+        rules_fired.append("low_signal_evidence_only")
 
     explanation_parts = []
     if top_direct:
         explanation_parts.append(
-            f"direct driver: {top_direct[0].get('event_type', 'none')}"
+            f"primary event: {dominant_event_type}"
         )
     if top_prop:
         explanation_parts.append(
             f"propagation from {top_prop[0].get('source_symbol', 'unknown')}"
         )
+    if direct["source_diversity"]:
+        explanation_parts.append(f"{direct['source_diversity']} supporting sources")
+    if direct["price_confirmation"] == "confirmed":
+        explanation_parts.append("price action confirms the sign")
+    elif direct["price_confirmation"] == "diverged":
+        explanation_parts.append("price action does not yet confirm the sign")
     if not explanation_parts:
         explanation_parts.append("no material event facts survived filtering")
 
@@ -578,10 +831,16 @@ def summarize_symbol(
         "risk_level": risk_level,
         "direct_score": round(direct_score, 6),
         "propagated_score": round(propagated_score, 6),
-        "total_score": round(total_score, 6),
-        "price_change_pct": round(price_change_pct(summary), 4) if price_change_pct(summary) is not None else None,
-        "event_count": len(event_facts),
-        "propagation_count": len(propagation_facts),
+        "total_score": total_score,
+        "signal_strength": signal_strength,
+        "conviction": round(conviction, 6),
+        "price_change_pct": round(trend_move_pct, 4) if trend_move_pct is not None else None,
+        "session_move_pct": round(intraday_move_pct, 4) if intraday_move_pct is not None else None,
+        "price_confirmation": str(direct["price_confirmation"]),
+        "event_count": int(direct["material_count"]),
+        "propagation_count": int(propagated["count"]),
+        "source_diversity": int(direct["source_diversity"]),
+        "dominant_event_type": dominant_event_type,
         "rules_fired": rules_fired,
         "top_driver_titles": [fact.get("article_title", "") for fact in top_direct[:3]],
         "explanation": f"{symbol} is {signal}: " + "; ".join(explanation_parts),
@@ -594,7 +853,8 @@ def format_signal_line(score: dict[str, Any]) -> str:
     return (
         f"{score['symbol']:>5}  {score['signal']:<7}  total={score['total_score']:+.3f}  "
         f"direct={score['direct_score']:+.3f}  prop={score['propagated_score']:+.3f}  "
-        f"move={move_text}  rules={','.join(score['rules_fired']) or 'none'}"
+        f"move={move_text}  conv={float(score.get('conviction', 0.0)):.2f}  "
+        f"rules={','.join(score['rules_fired']) or 'none'}"
     )
 
 
@@ -679,7 +939,8 @@ def run_pipeline(
         per_symbol_facts[symbol] = facts
 
     all_event_facts = [fact for facts in per_symbol_facts.values() for fact in facts]
-    propagation_facts = build_propagation_facts(all_event_facts, symbols)
+    material_event_facts = [fact for fact in all_event_facts if is_material_fact(fact)]
+    propagation_facts = build_propagation_facts(material_event_facts, symbols)
     extractors_used = sorted({str(fact.get("extractor", "unknown")) for fact in all_event_facts})
 
     for fact in all_event_facts:
