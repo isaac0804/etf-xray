@@ -1,7 +1,7 @@
 """
-SSE wrapper for event_strategy.py.
-Drives each sub-function directly so we can emit live progress per ticker.
-All output is JSON-lines on stdout so the Next.js route can parse events.
+SSE wrapper for event_strategy.py (v2: propagation + article filters).
+Drives sub-functions directly for live per-ticker progress streaming.
+All output is JSON-lines on stdout for the Next.js SSE route.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def err(msg: str) -> None:
     sys.stderr.write(msg + "\n")
     sys.stderr.flush()
 
-# ── Imports from teammate's modules ──────────────────────────────────────────
+# ── Imports ───────────────────────────────────────────────────────────────────
 
 import urllib.request, urllib.error
 
@@ -53,11 +53,11 @@ try:
     import ask_gemini as _ask_gemini
     import event_strategy as _event_strategy
     from event_strategy import (
-        normalize_articles,
-        extract_events_with_gemini, extract_events_with_keywords,
-        summarize_symbol, write_jsonl, json_dumps,
-        RUNS_DIR,
+        normalize_articles, extract_facts_with_gemini, extract_facts_with_keywords,
+        build_sector_alerts, summarize_symbol, write_jsonl, json_dumps, RUNS_DIR,
     )
+    from article_filters import filter_articles
+    from propagation_graph import build_propagation_facts
     from market_data import fetch_yahoo_chart, summarize_yahoo_chart
     from search_tavily import ENV_PATH, API_URL, load_dotenv
     from ask_gemini import get_api_key
@@ -67,9 +67,9 @@ except ImportError as e:
     sys.exit(1)
 
 RESULTS_PER_SYMBOL = 8
-SNIPPET_MAX_CHARS  = 400   # keep prompt under Gemini context limit
+SNIPPET_MAX_CHARS  = 400
 
-# ── Replace curl-based call_gemini with native urllib (avoids Windows arg limit) ──
+# ── Replace curl-based call_gemini with native urllib ─────────────────────────
 
 def _call_gemini_native(api_key: str, prompt: str, model: str | None = None) -> dict:
     model_name = model or _ask_gemini.get_model()
@@ -87,9 +87,9 @@ def _call_gemini_native(api_key: str, prompt: str, model: str | None = None) -> 
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode())
 
-# Patch event_strategy's local binding (from ask_gemini import call_gemini creates
-# a module-level name in event_strategy — patch that directly)
 _event_strategy.call_gemini = _call_gemini_native
+
+# ── News-optimised Tavily call ────────────────────────────────────────────────
 
 NEWS_DOMAINS = [
     "reuters.com", "bloomberg.com", "cnbc.com", "wsj.com",
@@ -98,22 +98,15 @@ NEWS_DOMAINS = [
 ]
 
 def call_tavily_news(api_key: str, query: str) -> dict:
-    """Advanced news-focused Tavily call: 7-day recency, 8 results."""
     payload = {
-        "api_key": api_key,
-        "query": query,
-        "topic": "news",
-        "search_depth": "advanced",
-        "days": 7,
-        "max_results": RESULTS_PER_SYMBOL,
-        "include_answer": True,
+        "api_key": api_key, "query": query,
+        "topic": "news", "search_depth": "advanced", "days": 7,
+        "max_results": RESULTS_PER_SYMBOL, "include_answer": True,
         "include_domains": NEWS_DOMAINS,
     }
     req = urllib.request.Request(
-        API_URL,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        API_URL, data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode())
@@ -123,7 +116,7 @@ def build_news_query(symbol: str, summary: dict) -> str:
     return (
         f"{name} {symbol} stock news past week: "
         "earnings results guidance analyst upgrade downgrade "
-        "regulatory action lawsuit M&A acquisition"
+        "regulatory action lawsuit supply disruption M&A"
     )
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
@@ -150,111 +143,159 @@ try:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     article_rows: list = []
-    event_rows: list = []
+    event_fact_rows: list = []
+    all_event_facts: list = []   # for propagation
     score_rows: list = []
     warnings: list = []
 
     for symbol in symbols:
         emit("SYMBOL_START", symbol=symbol, message=f"Processing {symbol}…")
 
-        # Yahoo Finance price data
+        # Yahoo Finance
         try:
             emit("YAHOO_FETCH", symbol=symbol, message=f"Fetching price data for {symbol}")
             price_summary = summarize_yahoo_chart(fetch_yahoo_chart(symbol))
         except Exception as exc:
             price_summary = {"symbol": symbol, "name": "", "instrument_type": "stock"}
             w = f"Yahoo Finance failed for {symbol}: {exc}"
-            warnings.append(w)
-            err(w)
+            warnings.append(w); err(w)
 
-        # Tavily news search (advanced, 7-day, news-only domains)
+        # Tavily (news-optimised)
         tavily_query = build_news_query(symbol, price_summary)
         emit("TAVILY_FETCH", symbol=symbol, message=f"Searching news for {symbol}")
         try:
             tavily_data = call_tavily_news(tavily_key, tavily_query)
         except Exception as exc:
             w = f"Tavily failed for {symbol}: {exc}"
-            warnings.append(w)
-            err(w)
+            warnings.append(w); err(w)
             tavily_data = {"results": [], "answer": ""}
 
         tavily_answer = str(tavily_data.get("answer", "")).strip()
-        articles = normalize_articles(symbol, tavily_data, tavily_query)[:RESULTS_PER_SYMBOL]
-        for a in articles:
-            a["snippet"] = a["snippet"][:SNIPPET_MAX_CHARS]
-        emit("TAVILY_DONE", symbol=symbol, count=len(articles),
-             message=f"{len(articles)} articles retrieved for {symbol}")
+        raw_articles = normalize_articles(symbol, tavily_data, tavily_query)
 
-        for article in articles:
+        # Article quality filter
+        filtered, rejected = filter_articles(raw_articles, RESULTS_PER_SYMBOL)
+        for a in filtered:
+            a["snippet"] = a["snippet"][:SNIPPET_MAX_CHARS]
+
+        emit("TAVILY_DONE", symbol=symbol, count=len(filtered), rejected=len(rejected),
+             message=f"{len(filtered)} articles kept, {len(rejected)} filtered for {symbol}")
+
+        for article in filtered:
             article_rows.append({
                 "run_id": run_id, "watchlist": watchlist_name, "symbol": symbol,
                 "tavily_query": tavily_query, "tavily_answer": tavily_answer,
                 "title": article["title"], "url": article["url"],
                 "domain": article["domain"], "rank": article["rank"],
-                "source_score": article["source_score"], "snippet": article["snippet"],
-                "raw_json": json_dumps(article["raw_result"]),
+                "source_score": article["source_score"],
+                "quality_score": article.get("quality_score", 0.0),
+                "snippet": article["snippet"],
+                "raw_json": json_dumps(article.get("raw_result", {})),
             })
 
         # Event extraction
-        events: list = []
-        if gemini_key and articles:
-            emit("GEMINI_EXTRACT", symbol=symbol, message=f"Gemini extracting events for {symbol}…")
+        facts: list = []
+        if gemini_key and filtered:
+            emit("GEMINI_EXTRACT", symbol=symbol, message=f"Gemini extracting facts for {symbol}…")
             try:
-                events = extract_events_with_gemini(symbol, price_summary, articles, gemini_key)
-                emit("GEMINI_DONE", symbol=symbol, count=len(events),
-                     message=f"{len(events)} event(s) extracted by Gemini for {symbol}")
+                facts = extract_facts_with_gemini(symbol, price_summary, filtered, gemini_key)
+                emit("GEMINI_DONE", symbol=symbol, count=len(facts),
+                     message=f"{len(facts)} fact(s) extracted by Gemini for {symbol}")
             except Exception as exc:
                 w = f"Gemini failed for {symbol}; using keywords: {exc}"
-                warnings.append(w)
-                err(w)
+                warnings.append(w); err(w)
 
-        if not events:
-            events = extract_events_with_keywords(symbol, articles)
-            emit("KEYWORDS_DONE", symbol=symbol, count=len(events),
-                 message=f"{len(events)} event(s) from keyword rules for {symbol}")
+        if not facts:
+            facts = extract_facts_with_keywords(symbol, filtered)
+            emit("KEYWORDS_DONE", symbol=symbol, count=len(facts),
+                 message=f"{len(facts)} fact(s) from keyword rules for {symbol}")
 
-        for event in events:
-            event_rows.append({
+        for fact in facts:
+            event_fact_rows.append({
                 "run_id": run_id, "watchlist": watchlist_name, "symbol": symbol,
-                "article_title": event["article_title"], "source_url": event["source_url"],
-                "event_type": event["event_type"], "direction": event["direction"],
-                "severity": event["severity"], "relevance": event["relevance"],
-                "confidence": event["confidence"], "horizon": event["horizon"],
-                "source_score": event["source_score"],
-                "event_score": round(float(event["event_score"]), 6),
-                "rationale": event["rationale"], "extractor": event["extractor"],
+                "article_title": fact.get("article_title", ""),
+                "source_url": fact.get("source_url", ""),
+                "event_type": fact.get("event_type", ""),
+                "severity_label": fact.get("severity_label", ""),
+                "severity_score": fact.get("severity_score", 0.0),
+                "confidence": fact.get("confidence", 0.0),
+                "sentiment_score": fact.get("sentiment_score", 0.0),
+                "direction": fact.get("direction", "neutral"),
+                "macro_theme": fact.get("macro_theme", ""),
+                "region": fact.get("region", ""),
+                "base_event_score": round(float(fact.get("base_event_score", 0.0)), 6),
+                "extractor": fact.get("extractor", ""),
             })
+            all_event_facts.append({**fact, "symbol": symbol})
 
-        # Score and emit
-        score = summarize_symbol(symbol, price_summary, events)
+    # Propagation pass (cross-ticker, after all direct facts collected)
+    emit("PROPAGATION", message=f"Computing cross-ticker propagation…")
+    propagation_facts = build_propagation_facts(all_event_facts, symbols)
+    emit("PROPAGATION_DONE", count=len(propagation_facts),
+         message=f"{len(propagation_facts)} propagation fact(s) computed")
+
+    # Score each ticker
+    prop_by_target: dict[str, list] = {}
+    for pf in propagation_facts:
+        prop_by_target.setdefault(pf["target_symbol"], []).append(pf)
+
+    direct_by_symbol: dict[str, list] = {}
+    for ef in all_event_facts:
+        direct_by_symbol.setdefault(ef["symbol"], []).append(ef)
+
+    for symbol in symbols:
+        d_facts = direct_by_symbol.get(symbol, [])
+        p_facts = prop_by_target.get(symbol, [])
+        score = summarize_symbol(symbol,
+                                  {"name": next((f.get("entity_name", symbol) for f in d_facts), symbol),
+                                   "close_series": []},
+                                  d_facts, p_facts)
         score["run_id"] = run_id
         score["watchlist"] = watchlist_name
         score_rows.append(score)
-
         emit("TICKER_SCORE", **score)
 
-    # Write JSONL output files
-    score_rows.sort(key=lambda r: float(r["total_score"]), reverse=True)
+    score_rows.sort(key=lambda r: abs(float(r["total_score"])), reverse=True)
+
+    # Sector alerts
+    sector_alerts = build_sector_alerts(all_event_facts, propagation_facts)
+    if sector_alerts:
+        emit("SECTOR_ALERTS", alerts=sector_alerts,
+             message=f"{len(sector_alerts)} sector alert(s)")
+
+    # Write JSONL files
+    prop_rows = [{**pf, "run_id": run_id, "watchlist": watchlist_name} for pf in propagation_facts]
+    sector_rows = [{**sa, "run_id": run_id, "watchlist": watchlist_name} for sa in sector_alerts]
+
+    write_jsonl(run_dir / "articles_raw.jsonl", article_rows)
+    write_jsonl(run_dir / "event_facts.jsonl", event_fact_rows)
+    write_jsonl(run_dir / "propagation_facts.jsonl", prop_rows)
+    write_jsonl(run_dir / "sector_alerts.jsonl", sector_rows)
+    write_jsonl(run_dir / "signal_outputs.jsonl", score_rows)
+
     summary = {
         "run_id": run_id, "watchlist": watchlist_name, "symbols": symbols,
         "extractor_mode": "gemini" if gemini_key else "keyword_rules",
-        "article_count": len(article_rows), "event_count": len(event_rows),
+        "article_count": len(article_rows),
+        "event_fact_count": len(event_fact_rows),
+        "propagation_fact_count": len(propagation_facts),
+        "signal_count": len(score_rows),
+        "sector_alert_count": len(sector_alerts),
         "top_longs":  [r["symbol"] for r in score_rows if r["signal"] == "long"][:3],
         "top_shorts": [r["symbol"] for r in score_rows if r["signal"] == "short"][:3],
         "warnings": warnings,
     }
-
-    write_jsonl(run_dir / "articles_raw.jsonl", article_rows)
-    write_jsonl(run_dir / "events_extracted.jsonl", event_rows)
-    write_jsonl(run_dir / "ticker_scores.jsonl", score_rows)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    emit("SUMMARY", **summary, message=f"Run {run_id} saved to runs/{run_id}/")
+    emit("SUMMARY", **summary, message=f"Run {run_id} complete")
     emit("PIPELINE_DONE",
-         message=f"Scan complete — {len(score_rows)} ticker(s) scored. "
-                 f"{sum(1 for r in score_rows if r['signal']=='long')} long, "
-                 f"{sum(1 for r in score_rows if r['signal']=='short')} short, "
-                 f"{sum(1 for r in score_rows if r['signal']=='neutral')} neutral.")
+         message=(
+             f"Scan complete — {len(score_rows)} scored, "
+             f"{sum(1 for r in score_rows if r['signal']=='long')} long, "
+             f"{sum(1 for r in score_rows if r['signal']=='short')} short, "
+             f"{sum(1 for r in score_rows if r['signal']=='neutral')} neutral. "
+             f"{len(propagation_facts)} propagation facts."
+         ))
 
 except Exception as exc:
     import traceback

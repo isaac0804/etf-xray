@@ -1,0 +1,14 @@
+{
+  "run_id": "60f183af84012f0b",
+  "watchlist": "custom",
+  "symbols": [
+    "AAPL",
+    "MSFT"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 8,
+  "event_count": 5,
+  "top_longs": [],
+  "top_shorts": [],
+  "warnings": []
+}

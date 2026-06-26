@@ -1,22 +1,23 @@
 # News2Signal
 
-Tiny event-driven signal engine for a hackathon build.
+Generic event-driven signal engine for a hackathon build.
 
-It uses:
+It now follows this flow:
 
-- `Tavily` to retrieve recent market-moving news
-- `Gemini` to extract structured events when a key is available
-- deterministic Python rules as a fallback extractor and scorer
-- `Yahoo Finance` for quick no-key price snapshots
-- `ClickHouse` as the storage/analytics layer via JSONEachRow-ready outputs
+- `Tavily` retrieves recent market-moving articles per symbol
+- `article_filters.py` removes quote/profile/noise pages and scores article quality
+- `Gemini` extracts structured event facts when quota is available
+- deterministic keyword rules take over automatically if Gemini is unavailable
+- `propagation_graph.py` maps direct events into downstream contagion facts
+- Python rules generate ticker signals and sector alerts
+- local JSONL outputs are ready for `ClickHouse`
 
-## What it does
+## What It Does
 
 - scans a watchlist such as `mag7`, `semis`, `energy`, or `banks`
-- retrieves recent articles for each symbol
-- extracts event types like `earnings_miss`, `guidance_cut`, or `regulatory_probe`
-- scores each symbol into `long`, `short`, or `neutral`
-- writes run outputs to local JSONL files ready for ClickHouse import
+- produces `event_facts`, `propagation_facts`, `signal_outputs`, and `sector_alerts`
+- emits explainable `long / short / neutral` ticker signals
+- emits sector-level contagion alerts when multiple names are affected
 
 ## Setup
 
@@ -32,165 +33,163 @@ ALPHA_VANTAGE_API_KEY=""
 Notes:
 
 - `Tavily` is required for the main pipeline.
-- `Gemini` is optional. If missing, the engine falls back to deterministic keyword rules.
-- `Yahoo Finance` needs no key for the chart endpoint used here.
-- `Alpha Vantage` is optional utility data, not critical path for the event strategy.
+- `Gemini` is optional in practice because the pipeline falls back automatically.
+- `Yahoo Finance` needs no key for the price snapshot endpoint used here.
+- `Alpha Vantage` is optional utility data, not the main event-strategy source.
+- `Prometheux` is not wired live because there is no Prometheux key/config in `.env`.
+- `ClickHouse` is not wired live because there is no ClickHouse connection config in `.env`.
 
 ## Main Run
 
-Run the generic event strategy on a preset watchlist:
+Run on a preset watchlist:
 
 ```bash
-python3 event_strategy.py --watchlist mag7
+cd /Users/jc/coding/news2signal
+python3 event_strategy.py --watchlist semis --results 2
 ```
 
-Run it on custom symbols:
+Run on custom symbols:
 
 ```bash
-python3 event_strategy.py NVDA AMD AVGO
-```
-
-Limit Tavily results per symbol:
-
-```bash
-python3 event_strategy.py --watchlist semis --results 3
+cd /Users/jc/coding/news2signal
+python3 event_strategy.py TSM NVDA AMD --results 2
 ```
 
 Print raw JSON summary:
 
 ```bash
-python3 event_strategy.py --watchlist mag7 --raw
+cd /Users/jc/coding/news2signal
+python3 event_strategy.py TSM NVDA AMD --results 2 --raw
 ```
 
-Run a one-command smoke test:
+## Smoke Tests
+
+Component-level check:
 
 ```bash
+cd /Users/jc/coding/news2signal
 python3 smoke_test.py
 ```
 
-Run the smoke test plus a full one-symbol pipeline:
+Full small-universe test:
 
 ```bash
+cd /Users/jc/coding/news2signal
 python3 smoke_test.py --full
 ```
 
-## Output
+The smoke test verifies:
 
-Each run writes files under:
+- Tavily key is present
+- Gemini key is present
+- Yahoo Finance returns a price snapshot
+- Tavily returns search results
+- Gemini works or gracefully reports quota exhaustion
+- the deterministic propagation graph works
+- the full pipeline runs end-to-end
+
+## Output Files
+
+Each run writes a folder under:
 
 [`runs/`](/Users/jc/coding/news2signal/runs)
 
-with a random run id, including:
+with files such as:
 
 - `articles_raw.jsonl`
-- `events_extracted.jsonl`
-- `ticker_scores.jsonl`
+- `event_facts.jsonl`
+- `propagation_facts.jsonl`
+- `signal_outputs.jsonl`
+- `sector_alerts.jsonl`
 - `summary.json`
 
-These files are already shaped for easy ClickHouse ingestion.
+Compatibility aliases are also written:
+
+- `events_extracted.jsonl`
+- `ticker_scores.jsonl`
 
 ## ClickHouse
 
-Create the tables with:
+The schema lives in:
 
 [`clickhouse_schema.sql`](/Users/jc/coding/news2signal/clickhouse_schema.sql)
 
-Then import each run file with `JSONEachRow`, for example:
+Main tables:
 
-```sql
-INSERT INTO articles_raw FORMAT JSONEachRow
-```
+- `articles_raw`
+- `event_facts`
+- `propagation_facts`
+- `signal_outputs`
+- `sector_alerts`
 
-```sql
-INSERT INTO events_extracted FORMAT JSONEachRow
-```
-
-```sql
-INSERT INTO ticker_scores FORMAT JSONEachRow
-```
-
-If you use `clickhouse-client`, the shell pattern is typically:
+Import shape is `JSONEachRow`, for example:
 
 ```bash
-clickhouse-client --query="INSERT INTO ticker_scores FORMAT JSONEachRow" < runs/<run_id>/ticker_scores.jsonl
+clickhouse-client --query="INSERT INTO signal_outputs FORMAT JSONEachRow" < runs/<run_id>/signal_outputs.jsonl
 ```
-
-## Preset Watchlists
-
-- `mag7`
-- `semis`
-- `energy`
-- `banks`
-- `indices`
-
-The preset definitions live in [watchlists.py](/Users/jc/coding/news2signal/watchlists.py).
 
 ## Strategy Logic
 
-The pipeline is intentionally simple and explainable:
+The active scoring stack is:
 
-1. `Tavily` retrieves recent articles per symbol.
-2. `Gemini` extracts structured events into strict JSON when available.
-3. If Gemini is unavailable, deterministic keyword rules classify the headlines.
-4. Each event gets a score:
-
-```text
-score =
-direction
-* event_type_multiplier
-* severity
-* relevance
-* confidence
-* source_score
-```
-
-5. Symbol scores are summed and turned into:
-
-- `long` if score >= `0.75`
-- `short` if score <= `-0.75`
-- `neutral` otherwise
+1. `Tavily` retrieves article candidates.
+2. `article_filters.py` keeps higher-quality event pages and rejects quote/profile noise.
+3. `Gemini` extracts facts with fields like:
+   - `event_type`
+   - `severity_score`
+   - `sentiment_score`
+   - `macro_theme`
+   - `affected_sectors`
+4. If Gemini is unavailable, keyword rules generate the same kind of facts.
+5. `propagation_graph.py` maps upstream events into downstream ticker impacts.
+6. The rule layer produces:
+   - direct ticker scores
+   - propagated ticker scores
+   - sector contagion alerts
 
 ## Prometheux Fit
 
-This repo currently implements the deterministic layer in plain Python because
-that is the fastest path in a hackathon.
+The Python rules are the active implementation right now because that was the
+fastest way to make the project work end-to-end.
 
-`Prometheux` would be the natural upgrade for:
+`Prometheux` is the natural upgrade for:
 
-- event taxonomy and ontology
-- article -> company -> sector relationships
-- deduplication of repeated stories
-- rule enforcement such as confidence thresholds
-- traceability from final signal back to source article and rule
+- event ontology
+- article -> entity -> sector relationships
+- dependency reasoning
+- rule execution and traceability
+- explanation paths from source event to final signal
 
-In other words:
+There is an illustrative rules file here:
 
-- `Gemini` says what likely happened
-- `Prometheux` would formalize what that means
-- `ClickHouse` stores the event stream and signals
+[`prometheux_rules.vadalog`](/Users/jc/coding/news2signal/prometheux_rules.vadalog)
 
 ## Utility Probes
 
 Tavily:
 
 ```bash
+cd /Users/jc/coding/news2signal
 python3 search_tavily.py "Latest market-moving headlines for NVDA stock"
 ```
 
 Gemini:
 
 ```bash
-python3 ask_gemini.py "Is recent NVDA news flow bullish or bearish?"
+cd /Users/jc/coding/news2signal
+python3 ask_gemini.py "Reply with exactly: GEMINI_OK"
 ```
 
 Yahoo Finance:
 
 ```bash
+cd /Users/jc/coding/news2signal
 python3 probe_yahoo_finance.py NVDA
 ```
 
 Alpha Vantage:
 
 ```bash
+cd /Users/jc/coding/news2signal
 python3 probe_alpha_vantage.py QQQ
 ```

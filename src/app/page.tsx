@@ -13,12 +13,18 @@ interface PriceData {
 interface TickerScore {
   symbol: string;
   name: string;
+  sector?: string;
+  region?: string;
   signal: "long" | "short" | "neutral";
+  risk_level?: string;
   total_score: number;
+  direct_score?: number;
+  propagated_score?: number;
   price_change_pct: number | null;
   event_count: number;
-  strongest_event_type: string;
-  strongest_event_score: number;
+  propagation_count?: number;
+  strongest_event_type?: string;
+  rules_fired?: string[];
   top_driver_titles: string[];
   explanation: string;
   run_id?: string;
@@ -55,6 +61,9 @@ const STEP_META: Record<string, { label: string; color: string }> = {
   GEMINI_EXTRACT:   { label: "Gemini",  color: "#818cf8" },
   GEMINI_DONE:      { label: "Gemini",  color: "#818cf8" },
   KEYWORDS_DONE:    { label: "Rules",   color: "#818cf8" },
+  PROPAGATION:      { label: "Prop",    color: "#f59e0b" },
+  PROPAGATION_DONE: { label: "Prop",    color: "#f59e0b" },
+  SECTOR_ALERTS:    { label: "Sector",  color: "#a78bfa" },
   PIPELINE_DONE:    { label: "Done",    color: "#26a69a" },
   ERROR:            { label: "Error",   color: "#ef5350" },
   STDERR:           { label: "Stderr",  color: "#ef5350" },
@@ -195,8 +204,11 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
           <span style={{ fontSize: 11, fontFamily: "monospace", color: "#9c9cf8" }}>
             {score.strongest_event_type || "—"}
           </span>
-          <div style={{ fontSize: 10, color: "#787b86", marginTop: 2 }}>
-            {score.event_count} event{score.event_count !== 1 ? "s" : ""}
+          <div style={{ fontSize: 10, color: "#787b86", marginTop: 2, display: "flex", gap: 6 }}>
+            <span>{score.event_count} direct</span>
+            {(score.propagation_count ?? 0) > 0 && (
+              <span style={{ color: "#f59e0b" }}>+{score.propagation_count} prop</span>
+            )}
           </div>
         </td>
         <td style={{ padding: "10px 12px", width: 76 }}>
@@ -220,6 +232,39 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
             <p style={{ fontSize: 12, color: "#b2b5be", lineHeight: 1.7, marginBottom: 10 }}>
               {score.explanation}
             </p>
+
+            {/* Score breakdown */}
+            <div style={{ display: "flex", gap: 16, marginBottom: 10, fontSize: 11, fontFamily: "monospace" }}>
+              <span style={{ color: "#787b86" }}>
+                direct <span style={{ color: fg }}>{(score.direct_score ?? 0) > 0 ? "+" : ""}{(score.direct_score ?? 0).toFixed(3)}</span>
+              </span>
+              {(score.propagation_count ?? 0) > 0 && (
+                <span style={{ color: "#787b86" }}>
+                  propagated <span style={{ color: "#f59e0b" }}>{(score.propagated_score ?? 0) > 0 ? "+" : ""}{(score.propagated_score ?? 0).toFixed(3)}</span>
+                </span>
+              )}
+              {score.risk_level && (
+                <span style={{ color: "#787b86" }}>
+                  risk <span style={{ color: score.risk_level.includes("HIGH") ? "#ef5350" : score.risk_level.includes("MEDIUM") ? "#f59e0b" : "#787b86" }}>
+                    {score.risk_level}
+                  </span>
+                </span>
+              )}
+              {score.sector && <span style={{ color: "#3a4060" }}>{score.sector}</span>}
+            </div>
+
+            {/* Rules fired */}
+            {score.rules_fired && score.rules_fired.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                {score.rules_fired.map((r) => (
+                  <span key={r} style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "rgba(109,40,217,0.15)", color: "#a78bfa", border: "1px solid rgba(109,40,217,0.3)", fontFamily: "monospace" }}>
+                    {r}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Top articles */}
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {score.top_driver_titles.map((t, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 PRESET_WATCHLISTS: dict[str, list[str]] = {
     "mag7": ["AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA"],
-    "semis": ["NVDA", "AMD", "AVGO", "QCOM", "MU", "TXN", "INTC"],
+    "semis": ["TSM", "ASML", "NVDA", "AMD", "AVGO", "QCOM", "MU", "AMAT"],
     "energy": ["XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX"],
     "banks": ["JPM", "BAC", "WFC", "C", "GS", "MS", "SCHW"],
     "indices": ["SPY", "QQQ", "IWM", "DIA"],

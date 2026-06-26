@@ -1,0 +1,20 @@
+{
+  "run_id": "dc7eae39afc93842",
+  "watchlist": "custom",
+  "symbols": [
+    "TSM",
+    "NVDA",
+    "AMD"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 24,
+  "event_fact_count": 8,
+  "propagation_fact_count": 2,
+  "signal_count": 3,
+  "sector_alert_count": 1,
+  "top_longs": [],
+  "top_shorts": [
+    "AMD"
+  ],
+  "warnings": []
+}

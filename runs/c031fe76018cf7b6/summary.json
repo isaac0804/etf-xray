@@ -1,0 +1,22 @@
+{
+  "run_id": "c031fe76018cf7b6",
+  "watchlist": "custom",
+  "symbols": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "AMZN",
+    "META",
+    "GOOGL",
+    "TSLA"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 55,
+  "event_count": 12,
+  "top_longs": [],
+  "top_shorts": [
+    "META",
+    "TSLA"
+  ],
+  "warnings": []
+}

@@ -128,6 +128,8 @@ def main(argv: list[str]) -> int:
         data = call_gemini(api_key, prompt)
     except subprocess.CalledProcessError as exc:
         print("Gemini API error:", file=sys.stderr)
+        if exc.stdout:
+            print(exc.stdout, file=sys.stderr)
         print(exc.stderr, file=sys.stderr)
         return 2
     except subprocess.TimeoutExpired:

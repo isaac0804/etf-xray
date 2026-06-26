@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 
 from ask_gemini import call_gemini, extract_text, get_api_key
 from event_strategy import run_pipeline
 from market_data import fetch_yahoo_chart, summarize_yahoo_chart
+from propagation_graph import build_propagation_facts
 from search_tavily import ENV_PATH, call_tavily, load_dotenv
 
 
@@ -51,9 +53,32 @@ def run_component_tests() -> int:
             data = call_gemini(gemini_key, "Reply with exactly: GEMINI_OK")
             text = extract_text(data)
             print(f"PASS: Gemini returned: {text}")
+        except subprocess.CalledProcessError as exc:
+            details = f"{exc.stdout}\n{exc.stderr}".lower()
+            if "quota" in details or "429" in details or "resource_exhausted" in details:
+                print("WARN: Gemini quota exhausted, pipeline will rely on keyword fallback")
+            else:
+                print(f"FAIL: Gemini test failed: {exc}")
+                return 4
         except Exception as exc:  # noqa: BLE001
             print(f"FAIL: Gemini test failed: {exc}")
             return 4
+
+    synthetic_facts = [
+        {
+            "symbol": "TSM",
+            "event_type": "supply_disruption",
+            "macro_theme": "supply_chain",
+            "base_event_score": -0.82,
+            "source_url": "synthetic://test",
+            "article_title": "Synthetic TSM disruption",
+        }
+    ]
+    propagation = build_propagation_facts(synthetic_facts, ["TSM", "NVDA", "AMD"])
+    if not any(item.get("target_symbol") == "NVDA" for item in propagation):
+        print("FAIL: propagation graph did not map TSM -> NVDA")
+        return 5
+    print(f"PASS: propagation graph produced {len(propagation)} downstream facts")
 
     print("\nComponent smoke test passed.")
     return 0
@@ -65,8 +90,8 @@ def main(argv: list[str]) -> int:
     if status != 0 or not full:
         return status
 
-    print("\nRunning full pipeline on NVDA...\n")
-    return run_pipeline("custom", ["NVDA"], 2, raw=False)
+    print("\nRunning full pipeline on TSM, NVDA, and AMD...\n")
+    return run_pipeline("custom", ["TSM", "NVDA", "AMD"], 2, raw=False)
 
 
 if __name__ == "__main__":

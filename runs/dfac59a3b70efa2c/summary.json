@@ -1,0 +1,19 @@
+{
+  "run_id": "dfac59a3b70efa2c",
+  "watchlist": "custom",
+  "symbols": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "SMH",
+    "XLK",
+    "LIT",
+    "GLD"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 56,
+  "event_count": 10,
+  "top_longs": [],
+  "top_shorts": [],
+  "warnings": []
+}

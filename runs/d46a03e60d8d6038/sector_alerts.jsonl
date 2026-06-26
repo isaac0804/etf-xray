@@ -1,0 +1,1 @@
+{"affected_symbols": ["AMD", "NVDA"], "alert_level": "HIGH", "driver_event_types": ["regulatory_probe"], "explanation": "semiconductors has high event pressure from geopolitical_risk across 2 symbols.", "macro_theme": "geopolitical_risk", "run_id": "d46a03e60d8d6038", "score": -1.322556, "sector": "semiconductors", "watchlist": "custom"}

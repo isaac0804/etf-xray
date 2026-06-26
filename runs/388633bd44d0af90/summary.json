@@ -1,0 +1,17 @@
+{
+  "run_id": "388633bd44d0af90",
+  "watchlist": "custom",
+  "symbols": [
+    "META"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 7,
+  "event_count": 4,
+  "top_longs": [],
+  "top_shorts": [
+    "META"
+  ],
+  "warnings": [
+    "Gemini failed for META; using keywords: HTTP Error 429: Too Many Requests"
+  ]
+}
