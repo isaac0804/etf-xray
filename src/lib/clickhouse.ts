@@ -41,10 +41,14 @@ export interface CachedSignal {
   run_id: string;
 }
 
-/** Returns fresh signals (< maxAgeSecs) for all requested symbols, or null if any is missing. */
+/** Returns fresh signals for all requested symbols, or null if fewer than minFreshFraction are cached.
+ *  maxAgeSecs: how old a row can be (default 6 hours).
+ *  minFreshFraction: what share of requested symbols must be cached to serve from cache (default 1.0 = all).
+ */
 export async function queryFreshSignals(
   symbols: string[],
-  maxAgeSecs = 1800,
+  maxAgeSecs = 21600,        // 6 hours — enough to cover a full work day
+  minFreshFraction = 1.0,    // require every symbol to be present
 ): Promise<CachedSignal[] | null> {
   if (!symbols.length) return null;
   const client = getClient();
@@ -69,7 +73,8 @@ export async function queryFreshSignals(
     });
 
     const rows = await rs.json<CachedSignal>();
-    if (rows.length < symbols.length) return null; // some symbols missing
+    // Serve from cache only if we have enough fresh symbols
+    if (rows.length < Math.ceil(symbols.length * minFreshFraction)) return null;
     return rows;
   } catch {
     return null; // ClickHouse unavailable — fall through to live scan

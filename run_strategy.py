@@ -341,7 +341,16 @@ def process_symbol(
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
-symbols_arg = sys.argv[1:] if len(sys.argv) > 1 else []
+# Parse --watchlist <name> from argv; remaining args are symbols
+_argv = sys.argv[1:]
+_forced_watchlist: str | None = None
+if "--watchlist" in _argv:
+    _idx = _argv.index("--watchlist")
+    if _idx + 1 < len(_argv):
+        _forced_watchlist = _argv[_idx + 1]
+        _argv = _argv[:_idx] + _argv[_idx + 2:]
+
+symbols_arg = _argv
 emit("PIPELINE_START", message=f"Starting scan for: {' '.join(symbols_arg) or 'mag7'}")
 
 try:
@@ -355,6 +364,10 @@ try:
     gemini_key = get_api_key()
 
     watchlist_name, symbols = resolve_symbols(symbols_arg, None)
+    # If the frontend passed --watchlist <name>, use that as the stored key
+    # (resolve_symbols returns "custom" when explicit symbols are given)
+    if _forced_watchlist:
+        watchlist_name = _forced_watchlist
     emit("SYMBOLS_RESOLVED", symbols=symbols, watchlist=watchlist_name,
          message=f"Watchlist: {watchlist_name} ({len(symbols)} tickers) — parallel mode")
 

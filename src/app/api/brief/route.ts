@@ -31,7 +31,9 @@ export async function POST(req: NextRequest) {
   const symbols: string[] =
     body.symbols?.length ? body.symbols
     : (body.topic ?? "").trim().split(/[\s,]+/).filter(Boolean);
-  const force: boolean = body.force === true;
+  const force: boolean    = body.force === true;
+  // Preset name passed by the frontend so Python stores the right watchlist key
+  const watchlist: string = (body.watchlist ?? "").trim() || "custom";
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -65,9 +67,12 @@ export async function POST(req: NextRequest) {
         : fs.existsSync(backendVenv) ? backendVenv
         : (process.platform === "win32" ? "python" : "python3");
 
-      const child = spawn(pythonBin, [path.join(root, "run_strategy.py"), ...symbols], {
-        cwd: root, env: { ...process.env },
-      });
+      // Pass --watchlist so Python stores the correct name in signal_cache
+      const child = spawn(
+        pythonBin,
+        [path.join(root, "run_strategy.py"), "--watchlist", watchlist, ...symbols],
+        { cwd: root, env: { ...process.env } },
+      );
 
       let buf = "";
       child.stdout.on("data", (chunk: Buffer) => {

@@ -1,161 +1,252 @@
 @import "tailwindcss";
 
-/* ── Dark theme (default) ─────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   DARK theme — deep indigo/navy glass aesthetic
+   ═══════════════════════════════════════════════════════════════════ */
 :root, [data-theme="dark"] {
-  --bg:           #131722;
-  --bg-panel:     #161b28;
-  --bg-header:    #1a1f2e;
-  --bg-row-hover: #1b2030;
-  --bg-row-open:  #171c2b;
-  --bg-row-sub:   rgba(18,23,34,0.5);
-  --bg-input:     #0e1220;
-  --bg-btn-sel:   #1e2a44;
-  --bg-rescan:    #1e3a6e;
+  /* ── Page background ── */
+  --bg:            #0b0d18;
+  --bg-gradient:   radial-gradient(ellipse 80% 60% at 50% -10%, rgba(99,60,255,0.18) 0%, transparent 70%),
+                   radial-gradient(ellipse 60% 40% at 90% 90%,  rgba(60,100,255,0.10) 0%, transparent 60%),
+                   #0b0d18;
 
-  --border:       #1e2230;
-  --border-dim:   #161b28;
-  --border-strong:#2a2e39;
+  /* ── Glass surface hierarchy ── */
+  --glass-1:       rgba(255,255,255,0.04);   /* sidebar / header */
+  --glass-2:       rgba(255,255,255,0.06);   /* cards */
+  --glass-3:       rgba(255,255,255,0.09);   /* hover / active card */
+  --glass-blur:    blur(16px);
+  --glass-border:  rgba(255,255,255,0.10);
+  --glass-border-strong: rgba(255,255,255,0.16);
+  --glass-shadow:  0 4px 24px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.06) inset;
+  --glass-shadow-lg: 0 8px 40px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.08) inset;
 
-  --fg:           #d1d4dc;
-  --fg-dim:       #787b86;
-  --fg-muted:     #4e5263;
-  --fg-faint:     #3a4060;
-  --fg-ghost:     #2a2e39;
-  --fg-sub:       #5a6180;
-  --fg-headline:  #d4d8e2;
-  --fg-summary:   #6b7590;
-  --fg-link:      #c8cdd8;
-  --fg-link-hover:#ffffff;
-  --fg-domain:    #3a4060;
-  --fg-source:    #8090b0;
-  --fg-source-h:  #b0c0d8;
-  --fg-contagion-src: #5570a0;
-  --fg-contagion-tgt: #8a6020;
-  --fg-contagion-rel: #3a4060;
-  --fg-sep:       #252a3a;
-  --fg-expand:    #2a3050;
-  --fg-log:       #5a6180;
-  --fg-log-time:  #2a2e39;
-  --fg-vadalog:   #2a2e39;
-  --fg-threshold: #2a2e39;
-  --fg-cached:    #26a69a;
-  --fg-rescan:    #7aabff;
-  --fg-rank:      #3a4060;
-  --fg-name:      #4e5263;
-  --fg-cached-tag:#3a5080;
-  --fg-pill-sep:  #252a3a;
-  --fg-ticker-dir-isNeg-color: #d06060;
-  --fg-ticker-dir-isPos-color: #4aada5;
-  --fg-ticker-prop-color:     #8a6020;
-  --fg-expanded-sym-neg: #c05050;
+  /* ── Surfaces (mapped from old tokens) ── */
+  --bg-panel:     var(--glass-1);
+  --bg-header:    rgba(11,13,24,0.85);
+  --bg-row-hover: var(--glass-3);
+  --bg-row-open:  rgba(99,60,255,0.08);
+  --bg-row-sub:   rgba(11,13,24,0.6);
+  --bg-input:     rgba(255,255,255,0.05);
+  --bg-btn-sel:   rgba(99,60,255,0.25);
+  --bg-rescan:    rgba(41,98,255,0.20);
+
+  --border:        rgba(255,255,255,0.07);
+  --border-dim:    rgba(255,255,255,0.04);
+  --border-strong: rgba(255,255,255,0.12);
+
+  /* ── Text ── */
+  --fg:            #e8eaf2;
+  --fg-dim:        #7e84a0;
+  --fg-muted:      #4e5370;
+  --fg-faint:      #363950;
+  --fg-ghost:      #232640;
+  --fg-sub:        #6870a0;
+  --fg-headline:   #eceff8;
+  --fg-summary:    #6870a0;
+  --fg-link:       #d8dbea;
+  --fg-link-hover: #ffffff;
+  --fg-domain:     #4a5070;
+  --fg-source:     #7880b0;
+  --fg-source-h:   #b0b8d8;
+  --fg-contagion-src: #5878c0;
+  --fg-contagion-tgt: #9a7020;
+  --fg-contagion-rel: #4a5070;
+  --fg-sep:        #1e2240;
+  --fg-expand:     #3a4070;
+  --fg-log:        #5a6090;
+  --fg-log-time:   #2a2e48;
+  --fg-vadalog:    #2e3260;
+  --fg-threshold:  #2e3260;
+  --fg-cached:     #26a69a;
+  --fg-rescan:     #829cff;
+  --fg-rank:       #3a4060;
+  --fg-name:       #5a6080;
+  --fg-cached-tag: #3a5090;
+  --fg-pill-sep:   #2a2e48;
+  --fg-ticker-dir-isNeg-color: #d06070;
+  --fg-ticker-dir-isPos-color: #3aada5;
+  --fg-ticker-prop-color:      #9a7020;
+  --fg-expanded-sym-neg: #c05060;
   --fg-expanded-sym-pos: #3a9090;
-  --fg-expanded-dom: #2e3450;
-  --fg-score-bar-track: #2a2e39;
-  --fg-watchlist-price: #787b86;
-  --fg-watchlist-dash:  #2a2e39;
-  --fg-section-label:   #3a4060;
-  --fg-pipe-label:      #3a4060;
+  --fg-expanded-dom:     #2e3450;
+  --fg-score-bar-track:  rgba(255,255,255,0.07);
+  --fg-watchlist-price:  #7e84a0;
+  --fg-watchlist-dash:   #2a2e48;
+  --fg-section-label:    #4e5480;
+  --fg-pipe-label:       #4e5480;
 
-  --bg-ticker-neg: rgba(239,83,80,0.08);
-  --bg-ticker-pos: rgba(38,166,154,0.08);
-  --bg-ticker-prop:rgba(245,158,11,0.07);
-  --border-ticker-neg: rgba(239,83,80,0.15);
-  --border-ticker-pos: rgba(38,166,154,0.15);
-  --border-ticker-prop:rgba(245,158,11,0.12);
+  /* ── Ticker chips ── */
+  --bg-ticker-neg: rgba(239,83,80,0.10);
+  --bg-ticker-pos: rgba(38,166,154,0.10);
+  --bg-ticker-prop:rgba(245,158,11,0.08);
+  --border-ticker-neg: rgba(239,83,80,0.22);
+  --border-ticker-pos: rgba(38,166,154,0.22);
+  --border-ticker-prop:rgba(245,158,11,0.18);
 
-  --scrollbar-track: #0d1526;
-  --scrollbar-thumb: #1e293b;
+  /* ── Accent glow for signal colors ── */
+  --glow-long:  0 0 16px rgba(38,166,154,0.25);
+  --glow-short: 0 0 16px rgba(239,83,80,0.25);
+
+  --scrollbar-track: rgba(0,0,0,0.3);
+  --scrollbar-thumb: rgba(255,255,255,0.08);
 }
 
-/* ── Light theme ──────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   LIGHT theme — clean white glass
+   ═══════════════════════════════════════════════════════════════════ */
 [data-theme="light"] {
-  --bg:           #f5f6f8;
-  --bg-panel:     #ffffff;
-  --bg-header:    #ffffff;
-  --bg-row-hover: #f0f2f5;
-  --bg-row-open:  #eef0f5;
+  --bg:            #f0f2f8;
+  --bg-gradient:   radial-gradient(ellipse 80% 50% at 50% -5%, rgba(99,60,255,0.08) 0%, transparent 60%),
+                   #f0f2f8;
+
+  --glass-1:       rgba(255,255,255,0.70);
+  --glass-2:       rgba(255,255,255,0.85);
+  --glass-3:       rgba(255,255,255,0.95);
+  --glass-blur:    blur(12px);
+  --glass-border:  rgba(0,0,0,0.07);
+  --glass-border-strong: rgba(0,0,0,0.12);
+  --glass-shadow:  0 2px 16px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.9) inset;
+  --glass-shadow-lg: 0 4px 32px rgba(0,0,0,0.12), 0 1px 0 rgba(255,255,255,1) inset;
+
+  --bg-panel:     var(--glass-1);
+  --bg-header:    rgba(255,255,255,0.80);
+  --bg-row-hover: rgba(99,60,255,0.04);
+  --bg-row-open:  rgba(99,60,255,0.06);
   --bg-row-sub:   rgba(240,242,248,0.7);
-  --bg-input:     #eef0f5;
-  --bg-btn-sel:   #dde4f5;
-  --bg-rescan:    #dbe8ff;
+  --bg-input:     rgba(0,0,0,0.04);
+  --bg-btn-sel:   rgba(99,60,255,0.12);
+  --bg-rescan:    rgba(41,98,255,0.10);
 
-  --border:       #e2e5ec;
-  --border-dim:   #eaecf0;
-  --border-strong:#d0d4de;
+  --border:        rgba(0,0,0,0.07);
+  --border-dim:    rgba(0,0,0,0.04);
+  --border-strong: rgba(0,0,0,0.12);
 
-  --fg:           #1a1d27;
-  --fg-dim:       #6b7280;
-  --fg-muted:     #8b93a6;
-  --fg-faint:     #9aa0b4;
-  --fg-ghost:     #c8ccd8;
-  --fg-sub:       #6b7590;
-  --fg-headline:  #1e2233;
-  --fg-summary:   #4a5270;
-  --fg-link:      #1e2233;
-  --fg-link-hover:#000000;
-  --fg-domain:    #9aa0b4;
-  --fg-source:    #6b7590;
-  --fg-source-h:  #2a3050;
-  --fg-contagion-src: #2952a0;
+  --fg:            #1a1c2e;
+  --fg-dim:        #6b7080;
+  --fg-muted:      #8b93b0;
+  --fg-faint:      #a0a8c0;
+  --fg-ghost:      #c8cce0;
+  --fg-sub:        #6870a0;
+  --fg-headline:   #1a1c2e;
+  --fg-summary:    #4a5270;
+  --fg-link:       #1e2040;
+  --fg-link-hover: #000010;
+  --fg-domain:     #9098b8;
+  --fg-source:     #6070a0;
+  --fg-source-h:   #2a3060;
+  --fg-contagion-src: #2950a8;
   --fg-contagion-tgt: #8a5500;
-  --fg-contagion-rel: #6b7590;
-  --fg-sep:       #d8dce8;
-  --fg-expand:    #9aa0b4;
-  --fg-log:       #6b7590;
-  --fg-log-time:  #b0b6c8;
-  --fg-vadalog:   #c0c4d4;
-  --fg-threshold: #c0c4d4;
-  --fg-cached:    #059669;
-  --fg-rescan:    #1d4ed8;
-  --fg-rank:      #9aa0b4;
-  --fg-name:      #6b7280;
-  --fg-cached-tag:#2952a0;
-  --fg-pill-sep:  #d8dce8;
+  --fg-contagion-rel: #6070a0;
+  --fg-sep:        #d0d4e8;
+  --fg-expand:     #9098b8;
+  --fg-log:        #6070a0;
+  --fg-log-time:   #b0b8d0;
+  --fg-vadalog:    #c0c4d8;
+  --fg-threshold:  #c0c4d8;
+  --fg-cached:     #059669;
+  --fg-rescan:     #1d4ed8;
+  --fg-rank:       #9098b8;
+  --fg-name:       #6b7080;
+  --fg-cached-tag: #2950a8;
+  --fg-pill-sep:   #d0d4e8;
   --fg-ticker-dir-isNeg-color: #b02020;
   --fg-ticker-dir-isPos-color: #0d7a74;
   --fg-ticker-prop-color:      #8a5500;
   --fg-expanded-sym-neg: #b02020;
   --fg-expanded-sym-pos: #0d7a74;
-  --fg-expanded-dom: #9aa0b4;
-  --fg-score-bar-track: #e0e4ee;
-  --fg-watchlist-price: #6b7280;
-  --fg-watchlist-dash:  #c8ccd8;
-  --fg-section-label:   #8b93a6;
-  --fg-pipe-label:      #8b93a6;
+  --fg-expanded-dom:     #9098b8;
+  --fg-score-bar-track:  rgba(0,0,0,0.08);
+  --fg-watchlist-price:  #6b7080;
+  --fg-watchlist-dash:   #c8cce0;
+  --fg-section-label:    #8b93b0;
+  --fg-pipe-label:       #8b93b0;
 
-  --bg-ticker-neg: rgba(190,40,40,0.06);
-  --bg-ticker-pos: rgba(13,130,120,0.06);
-  --bg-ticker-prop:rgba(180,120,0,0.06);
-  --border-ticker-neg: rgba(190,40,40,0.18);
-  --border-ticker-pos: rgba(13,130,120,0.18);
-  --border-ticker-prop:rgba(180,120,0,0.15);
+  --bg-ticker-neg: rgba(180,40,40,0.06);
+  --bg-ticker-pos: rgba(13,120,110,0.06);
+  --bg-ticker-prop:rgba(160,110,0,0.06);
+  --border-ticker-neg: rgba(180,40,40,0.18);
+  --border-ticker-pos: rgba(13,120,110,0.18);
+  --border-ticker-prop:rgba(160,110,0,0.15);
 
-  --scrollbar-track: #eff1f5;
-  --scrollbar-thumb: #d0d4de;
+  --glow-long:  0 0 12px rgba(38,166,154,0.15);
+  --glow-short: 0 0 12px rgba(239,83,80,0.15);
+
+  --scrollbar-track: rgba(0,0,0,0.04);
+  --scrollbar-thumb: rgba(0,0,0,0.12);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Base
+   ═══════════════════════════════════════════════════════════════════ */
+html, body {
+  height: 100%;
 }
 
 body {
-  background: var(--bg);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
   color: var(--fg);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   min-height: 100vh;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.25s, color 0.2s;
 }
 
+/* ── Glass utility classes ── */
+.glass {
+  background: var(--glass-2);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-sm {
+  background: var(--glass-1);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-card {
+  background: var(--glass-2);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 14px;
+  transition: box-shadow 0.15s, background 0.15s;
+}
+
+.glass-card:hover {
+  background: var(--glass-3);
+  box-shadow: var(--glass-shadow-lg);
+}
+
+.glass-card-open {
+  background: rgba(99,60,255,0.07);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(99,60,255,0.2);
+  box-shadow: 0 4px 32px rgba(99,60,255,0.12), 0 1px 0 rgba(255,255,255,0.06) inset;
+  border-radius: 14px;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+
+/* ── Animations ── */
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.4; transform: scale(0.85); }
 }
 
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-
 @keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(5px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.log-entry { animation: fadeSlideIn 0.15s ease forwards; }
+.log-entry { animation: fadeSlideIn 0.18s ease forwards; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { animation: spin 0.8s linear infinite; }
@@ -167,3 +258,9 @@ body {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)  scale(1); }
+}
+.card-in { animation: cardIn 0.2s ease forwards; }

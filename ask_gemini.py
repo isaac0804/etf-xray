@@ -11,7 +11,7 @@ import textwrap
 
 from search_tavily import ENV_PATH, load_dotenv
 
-DEFAULT_MODEL = "gemini-3.5-flash"
+DEFAULT_MODEL = "gemini-3.1-flash-lite"
 DEFAULT_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 DEFAULT_PROMPT = (
     "Summarize whether recent news flow is bullish or bearish for NVDA in 4 "

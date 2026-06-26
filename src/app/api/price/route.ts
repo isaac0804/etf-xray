@@ -17,10 +17,23 @@ if (fs.existsSync(rootEnv)) {
   });
 }
 
+// Allowed range/interval combos
+const RANGE_INTERVAL: Record<string, string> = {
+  "5d":  "1d",
+  "1mo": "1d",
+  "3mo": "1d",
+  "6mo": "1wk",
+  "1y":  "1wk",
+  "2y":  "1mo",
+};
+
 export async function GET(req: NextRequest) {
-  const symbol = req.nextUrl.searchParams.get("symbol") ?? "QQQ";
+  const symbol   = req.nextUrl.searchParams.get("symbol") ?? "QQQ";
+  const range    = req.nextUrl.searchParams.get("range") ?? "5d";
+  const interval = RANGE_INTERVAL[range] ?? "1d";
+
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?range=5d&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`;
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" },
     });
@@ -28,22 +41,23 @@ export async function GET(req: NextRequest) {
     const result = data?.chart?.result?.[0];
     if (!result) return NextResponse.json({ error: "No data" }, { status: 404 });
 
-    const meta = result.meta ?? {};
-    const closes: number[] = result.indicators?.quote?.[0]?.close ?? [];
+    const meta       = result.meta ?? {};
+    const closes: number[]     = result.indicators?.quote?.[0]?.close ?? [];
     const timestamps: number[] = result.timestamp ?? [];
 
     return NextResponse.json({
       symbol,
+      range,
       currency: meta.currency,
-      price: meta.regularMarketPrice,
+      price:    meta.regularMarketPrice,
       prev_close: meta.chartPreviousClose,
       change_pct: meta.chartPreviousClose
         ? (((meta.regularMarketPrice - meta.chartPreviousClose) / meta.chartPreviousClose) * 100).toFixed(2)
         : null,
       series: timestamps.map((t, i) => ({
-        date: new Date(t * 1000).toISOString().slice(0, 10),
+        date:  new Date(t * 1000).toISOString().slice(0, 10),
         close: closes[i] ?? null,
-      })),
+      })).filter((p) => p.close !== null),
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
