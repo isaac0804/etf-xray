@@ -21,7 +21,12 @@ if (fs.existsSync(rootEnv)) {
 }
 
 export async function POST(req: NextRequest) {
-  const { topic } = await req.json().catch(() => ({ topic: "QQQ SMH LIT" }));
+  const body = await req.json().catch(() => ({}));
+  // Accept either {symbols: ["NVDA","AMD"]} or legacy {topic: "NVDA AMD"}
+  const symbols: string[] =
+    body.symbols?.length ? body.symbols
+    : (body.topic ?? "").trim().split(/[\s,]+/).filter(Boolean);
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -30,10 +35,15 @@ export async function POST(req: NextRequest) {
       const venvPython = process.platform === "win32"
         ? path.join(root, "venv", "Scripts", "python.exe")
         : path.join(root, "venv", "bin", "python3");
+      const backendVenv = process.platform === "win32"
+        ? path.join(root, "backend", "venv", "Scripts", "python.exe")
+        : path.join(root, "backend", "venv", "bin", "python3");
       const systemPython = process.platform === "win32" ? "python" : "python3";
-      const pythonBin = fs.existsSync(venvPython) ? venvPython : systemPython;
+      const pythonBin = fs.existsSync(venvPython) ? venvPython
+        : fs.existsSync(backendVenv) ? backendVenv
+        : systemPython;
 
-      const child = spawn(pythonBin, [path.join(root, "run_brief.py"), topic], {
+      const child = spawn(pythonBin, [path.join(root, "run_strategy.py"), ...symbols], {
         cwd: root,
         env: { ...process.env },
       });
