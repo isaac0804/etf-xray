@@ -355,232 +355,194 @@ function ActivityEntry({ entry }: { entry: LogEntry }) {
 
 // ── Event card (news-feed style) ──────────────────────────────────────────────
 
-const SEV_COLOR: Record<string, string> = { high: "#ef5350", medium: "#f59e0b", low: "#4e5263" };
 const DIR_COLOR: Record<string, string> = { up: "#26a69a", down: "#ef5350", neutral: "#4e5263", mixed: "#f59e0b" };
 const THEME_COLOR: Record<string, string> = {
   geopolitical_risk: "#ef5350", supply_chain: "#f59e0b", earnings: "#26a69a",
   sell_side: "#818cf8", innovation: "#34d399", regulation: "#ef5350",
   strategic_activity: "#7dd3a8", demand: "#60a5fa", other: "#4e5263",
 };
-const SEV_BG: Record<string, string> = {
-  high: "rgba(239,83,80,0.08)", medium: "rgba(245,158,11,0.08)", low: "rgba(78,82,99,0.08)",
-};
 
 function EventCard({ group }: { group: EventGroup }) {
   const [expanded, setExpanded] = useState(false);
   const dirColor   = DIR_COLOR[group.direction] ?? "#4e5263";
-  const sevColor   = SEV_COLOR[group.max_severity] ?? "#4e5263";
   const themeColor = THEME_COLOR[group.macro_theme] ?? "#4e5263";
-  const totalAbs   = Math.abs(group.total_impact);
-  const barPct     = Math.min((totalAbs / 1.5) * 100, 100);
   const isNeg      = group.total_impact < 0;
   const topFact    = group.facts[0];
-  const domain     = topFact?.source_url
+  const allTickers = [
+    ...group.direct_tickers.map((t) => t.symbol),
+    ...group.propagated_tickers.slice(0, 3).map((t) => t.target_symbol),
+  ].filter((v, i, a) => a.indexOf(v) === i).slice(0, 8);
+
+  const domain = topFact?.source_url
     ? (() => { try { return new URL(topFact.source_url).hostname.replace(/^www\./, ""); } catch { return ""; } })()
     : "";
 
-  return (
-    <div
-      style={{
-        borderBottom: "1px solid #1a1f2e",
-        borderLeft: `3px solid ${dirColor}`,
-        background: expanded ? "#161c2c" : "transparent",
-        transition: "background 0.12s",
-        cursor: "pointer",
-      }}
-      onMouseEnter={(e) => { if (!expanded) e.currentTarget.style.background = "#14192a"; }}
-      onMouseLeave={(e) => { if (!expanded) e.currentTarget.style.background = "transparent"; }}
-      onClick={() => setExpanded((v) => !v)}
-    >
-      {/* ── Card body ── */}
-      <div style={{ padding: "14px 20px 13px 18px" }}>
+  // Clean up "Keyword fallback" summaries — don't show them
+  const summary = topFact?.summary && !topFact.summary.toLowerCase().includes("keyword fallback")
+    ? topFact.summary : null;
 
-        {/* Row 1: meta tags */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          {/* Event type badge */}
+  return (
+    <div style={{ borderBottom: "1px solid #161b28" }}>
+
+      {/* ── Main card ── */}
+      <div
+        style={{
+          padding: "18px 24px 16px",
+          cursor: "pointer",
+          transition: "background 0.1s",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = "#0f1420")}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {/* Category line */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
           <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
-            padding: "2px 8px", borderRadius: 3,
-            background: SEV_BG[group.max_severity] ?? "transparent",
-            color: sevColor,
-            border: `1px solid ${sevColor}30`,
+            fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+            color: dirColor,
           }}>
             {fmtEvent(group.event_type)}
           </span>
-
-          {/* Theme pill */}
-          <span style={{
-            fontSize: 10, padding: "2px 7px", borderRadius: 10,
-            background: `${themeColor}18`, color: themeColor,
-            border: `1px solid ${themeColor}30`,
-          }}>
-            {group.macro_theme.replace(/_/g, " ")}
+          <span style={{ fontSize: 10, color: themeColor, opacity: 0.75 }}>
+            · {group.macro_theme.replace(/_/g, " ")}
           </span>
-
-          {/* Score */}
-          <span style={{
-            fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: dirColor,
-            marginLeft: "auto",
-          }}>
+          <span style={{ marginLeft: "auto", fontSize: 12, fontFamily: "monospace", fontWeight: 600, color: dirColor }}>
             {group.total_impact > 0 ? "+" : ""}{group.total_impact.toFixed(3)}
           </span>
         </div>
 
-        {/* Row 2: headline */}
+        {/* Headline */}
         {topFact?.article_title && (
-          <div style={{ marginBottom: 9 }}>
-            {topFact.source_url ? (
-              <a
-                href={topFact.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: 14, fontWeight: 600, color: "#c8cdd8", lineHeight: 1.4, textDecoration: "none", display: "block" }}
-                onClick={(e) => e.stopPropagation()}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "#e8eaf0")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "#c8cdd8")}
-              >
-                {topFact.article_title}
-              </a>
-            ) : (
-              <span style={{ fontSize: 14, fontWeight: 600, color: "#c8cdd8", lineHeight: 1.4, display: "block" }}>
-                {topFact.article_title}
-              </span>
-            )}
-            {domain && (
-              <span style={{ fontSize: 10, color: "#3a4060", marginTop: 3, display: "block" }}>{domain}</span>
-            )}
-          </div>
+          topFact.source_url ? (
+            <a
+              href={topFact.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: 15, fontWeight: 600, color: "#d4d8e2", lineHeight: 1.45,
+                textDecoration: "none", display: "block", marginBottom: summary ? 8 : 12,
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#ffffff")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#d4d8e2")}
+            >
+              {topFact.article_title}
+            </a>
+          ) : (
+            <span style={{
+              fontSize: 15, fontWeight: 600, color: "#d4d8e2", lineHeight: 1.45,
+              display: "block", marginBottom: summary ? 8 : 12,
+            }}>
+              {topFact.article_title}
+            </span>
+          )
         )}
 
-        {/* Row 3: summary (if any) */}
-        {topFact?.summary && (
-          <p style={{ fontSize: 12, color: "#5a6480", lineHeight: 1.6, marginBottom: 10, margin: "0 0 10px" }}>
-            {topFact.summary}
+        {/* Summary */}
+        {summary && (
+          <p style={{ fontSize: 13, color: "#6b7590", lineHeight: 1.65, margin: "0 0 12px" }}>
+            {summary}
           </p>
         )}
 
-        {/* Row 4: affected tickers + impact bar */}
+        {/* Footer: domain · tickers */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          {/* Direct tickers */}
-          {group.direct_tickers.slice(0, 6).map((t) => (
-            <span key={t.symbol} style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
-              background: isNeg ? "rgba(239,83,80,0.10)" : "rgba(38,166,154,0.10)",
-              color: isNeg ? "#ef8080" : "#5bc8c0",
-              border: `1px solid ${isNeg ? "rgba(239,83,80,0.25)" : "rgba(38,166,154,0.25)"}`,
-              fontFamily: "monospace",
-            }}>
-              {t.symbol}
-              <span style={{ fontSize: 9, color: SEV_COLOR[t.severity_label], fontWeight: 600, letterSpacing: "0.04em" }}>
-                {t.severity_label.slice(0, 3).toUpperCase()}
-              </span>
-            </span>
-          ))}
-
-          {/* Propagated tickers (dimmer) */}
-          {group.propagated_tickers.slice(0, 4).map((t) => (
-            <span key={`p-${t.target_symbol}`} style={{
-              display: "inline-flex", alignItems: "center", gap: 3,
-              fontSize: 11, fontWeight: 600, padding: "3px 7px", borderRadius: 4,
-              background: "rgba(245,158,11,0.07)",
-              color: "#b07030",
-              border: "1px solid rgba(245,158,11,0.15)",
-              fontFamily: "monospace",
-            }}>
-              <span style={{ fontSize: 9, opacity: 0.6 }}>↳</span>{t.target_symbol}
-            </span>
-          ))}
-
-          {/* Impact bar (right-aligned) */}
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-            <div style={{ width: 64, height: 3, background: "#1e2230", borderRadius: 2, overflow: "hidden" }}>
-              <div style={{ width: `${barPct}%`, height: "100%", background: dirColor, borderRadius: 2 }} />
-            </div>
-            <span style={{ fontSize: 9, color: "#3a4060", fontFamily: "monospace" }}>
-              {group.direct_tickers.length}d{group.propagated_tickers.length > 0 ? ` · ${group.propagated_tickers.length}p` : ""}
-            </span>
+          {domain && (
+            <span style={{ fontSize: 11, color: "#3a4060" }}>{domain}</span>
+          )}
+          {domain && allTickers.length > 0 && (
+            <span style={{ fontSize: 10, color: "#252a3a" }}>·</span>
+          )}
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+            {allTickers.map((sym, i) => {
+              const isProp = !group.direct_tickers.find((t) => t.symbol === sym);
+              return (
+                <span key={sym} style={{
+                  fontSize: 11, fontWeight: 700, fontFamily: "monospace",
+                  padding: "2px 7px", borderRadius: 3,
+                  background: isProp
+                    ? "rgba(245,158,11,0.07)"
+                    : isNeg ? "rgba(239,83,80,0.08)" : "rgba(38,166,154,0.08)",
+                  color: isProp
+                    ? "#8a6020"
+                    : isNeg ? "#d06060" : "#4aada5",
+                  border: `1px solid ${isProp ? "rgba(245,158,11,0.12)" : isNeg ? "rgba(239,83,80,0.15)" : "rgba(38,166,154,0.15)"}`,
+                }}>
+                  {i > 0 && isProp && !group.direct_tickers.find((t) => t.symbol === allTickers[i - 1]) ? "" : ""}
+                  {sym}
+                </span>
+              );
+            })}
           </div>
+          {(group.propagated_tickers.length > 0 || group.facts.length > 1) && (
+            <span style={{ marginLeft: "auto", fontSize: 10, color: "#2a3050" }}>
+              {expanded ? "▲" : "▼"}
+            </span>
+          )}
         </div>
-
       </div>
 
-      {/* ── Expanded detail ── */}
+      {/* ── Expanded: other sources + contagion ── */}
       {expanded && (
-        <div
-          style={{ padding: "0 20px 16px 21px", borderTop: "1px solid #1a1f2e" }}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div style={{ padding: "0 24px 16px", borderTop: "1px solid #161b28" }}>
 
-          {/* All source articles */}
+          {/* Other articles for this event type */}
           {group.facts.length > 1 && (
-            <div style={{ marginTop: 14, marginBottom: 14 }}>
-              <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#2a3050", marginBottom: 8 }}>
-                All sources ({group.facts.length})
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                {group.facts.map((f, i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700, color: isNeg ? "#ef8080" : "#5bc8c0",
-                      fontFamily: "monospace", flexShrink: 0, minWidth: 44,
-                      marginTop: 1,
-                    }}>
-                      {f.symbol}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {f.source_url ? (
-                        <a href={f.source_url} target="_blank" rel="noopener noreferrer"
-                          style={{ fontSize: 12, color: "#7080a0", lineHeight: 1.5, textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                          onMouseEnter={(e) => (e.currentTarget.style.color = "#9fb8d8")}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = "#7080a0")}
-                        >
-                          {f.article_title}
-                        </a>
-                      ) : (
-                        <span style={{ fontSize: 12, color: "#7080a0", lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
-                          {f.article_title}
-                        </span>
-                      )}
-                      {f.summary && (
-                        <span style={{ fontSize: 11, color: "#3a4060", lineHeight: 1.5 }}>{f.summary}</span>
-                      )}
+            <div style={{ paddingTop: 14, marginBottom: group.propagated_tickers.length > 0 ? 14 : 0 }}>
+              {group.facts.slice(1).map((f, i) => {
+                const fDomain = f.source_url
+                  ? (() => { try { return new URL(f.source_url).hostname.replace(/^www\./, ""); } catch { return ""; } })()
+                  : "";
+                const fSummary = f.summary && !f.summary.toLowerCase().includes("keyword fallback") ? f.summary : null;
+                return (
+                  <div key={i} style={{
+                    paddingTop: i > 0 ? 12 : 0,
+                    marginTop: i > 0 ? 12 : 0,
+                    borderTop: i > 0 ? "1px solid #161b28" : "none",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: isNeg ? "#c05050" : "#3a9090", fontFamily: "monospace" }}>
+                        {f.symbol}
+                      </span>
+                      {fDomain && <span style={{ fontSize: 10, color: "#2e3450" }}>{fDomain}</span>}
                     </div>
-                    <span style={{
-                      fontSize: 11, fontFamily: "monospace", flexShrink: 0,
-                      color: f.base_event_score >= 0 ? "#26a69a" : "#ef5350",
-                    }}>
-                      {f.base_event_score >= 0 ? "+" : ""}{f.base_event_score.toFixed(3)}
-                    </span>
+                    {f.source_url ? (
+                      <a href={f.source_url} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 13, color: "#8090b0", lineHeight: 1.5, textDecoration: "none", display: "block" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "#b0c0d8")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#8090b0")}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {f.article_title}
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: 13, color: "#8090b0", lineHeight: 1.5, display: "block" }}>
+                        {f.article_title}
+                      </span>
+                    )}
+                    {fSummary && (
+                      <p style={{ fontSize: 12, color: "#4a5268", lineHeight: 1.6, margin: "4px 0 0" }}>{fSummary}</p>
+                    )}
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           )}
 
-          {/* Propagation ripple */}
+          {/* Contagion ripple */}
           {group.propagated_tickers.length > 0 && (
-            <div style={{ marginTop: group.facts.length > 1 ? 0 : 14 }}>
-              <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#2a3050", marginBottom: 8 }}>
-                Contagion ripple
+            <div style={{ paddingTop: 14, borderTop: group.facts.length > 1 ? "1px solid #161b28" : "none" }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "#2a3050", marginBottom: 10 }}>
+                Contagion
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {group.propagated_tickers.map((t, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 10, color: "#6b8fff", fontFamily: "monospace", fontWeight: 700, minWidth: 44 }}>
-                      {t.source_symbol}
-                    </span>
-                    <span style={{ fontSize: 10, color: "#2a3050" }}>→</span>
-                    <span style={{ fontSize: 10, color: "#b07030", fontFamily: "monospace", fontWeight: 700, minWidth: 44 }}>
-                      {t.target_symbol}
-                    </span>
-                    <span style={{ fontSize: 10, color: "#3a4060", flex: 1 }}>
-                      {t.relationship.replace(/_/g, " ")}
-                    </span>
-                    <span style={{
-                      fontSize: 11, fontFamily: "monospace", flexShrink: 0,
-                      color: t.impact_score >= 0 ? "#26a69a" : "#ef5350",
-                    }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#5570a0", fontFamily: "monospace", minWidth: 40 }}>{t.source_symbol}</span>
+                    <span style={{ fontSize: 10, color: "#252a3a" }}>→</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#8a6020", fontFamily: "monospace", minWidth: 40 }}>{t.target_symbol}</span>
+                    <span style={{ fontSize: 11, color: "#3a4060", flex: 1 }}>{t.relationship.replace(/_/g, " ")}</span>
+                    <span style={{ fontSize: 11, fontFamily: "monospace", color: t.impact_score >= 0 ? "#26a69a" : "#ef5350" }}>
                       {t.impact_score >= 0 ? "+" : ""}{t.impact_score.toFixed(3)}
                     </span>
                   </div>
