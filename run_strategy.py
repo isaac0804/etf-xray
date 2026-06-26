@@ -73,6 +73,102 @@ except ImportError as e:
 RESULTS_PER_SYMBOL = 8
 SNIPPET_MAX_CHARS  = 400
 PARALLEL_WORKERS   = 6   # I/O bound — more threads than CPUs is fine
+CH_DB              = os.environ.get("CLICKHOUSE_DATABASE", "etf_xray")
+
+# ── ClickHouse (optional — degrades gracefully if unavailable) ────────────────
+
+_ch_client = None
+
+def _get_ch():
+    global _ch_client
+    if _ch_client is not None:
+        return _ch_client
+    try:
+        import clickhouse_connect
+        host  = os.environ.get("CLICKHOUSE_HOST", "localhost")
+        port  = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+        _ch_client = clickhouse_connect.get_client(
+            host=host, port=port,
+            username=os.environ.get("CLICKHOUSE_USER", "default"),
+            password=os.environ.get("CLICKHOUSE_PASSWORD", ""),
+            secure=port in (8443, 8444),
+            connect_timeout=3, send_receive_timeout=5,
+        )
+        return _ch_client
+    except Exception as exc:
+        err(f"ClickHouse unavailable: {exc}")
+        return None
+
+def _ensure_schema(ch) -> None:
+    ch.command(f"CREATE DATABASE IF NOT EXISTS `{CH_DB}`")
+    ch.command(f"""
+        CREATE TABLE IF NOT EXISTS `{CH_DB}`.signal_cache (
+            symbol               String,
+            watchlist            String,
+            run_ts               DateTime64(3, 'UTC'),
+            signal               String,
+            risk_level           String,
+            total_score          Float64,
+            direct_score         Float64,
+            propagated_score     Float64,
+            price_change_pct     Nullable(Float64),
+            event_count          UInt16,
+            propagation_count    UInt16,
+            strongest_event_type String,
+            top_driver_titles    Array(String),
+            top_driver_urls      Array(String),
+            explanation          String,
+            rules_fired          Array(String),
+            sector               String,
+            region               String,
+            name                 String,
+            run_id               String
+        ) ENGINE = ReplacingMergeTree(run_ts)
+        ORDER BY (symbol, watchlist)
+    """)
+
+def write_to_clickhouse(score_rows: list, watchlist_name: str, run_id: str) -> None:
+    ch = _get_ch()
+    if not ch:
+        return
+    try:
+        _ensure_schema(ch)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # ClickHouse expects naive UTC
+        data = []
+        cols = [
+            "symbol", "watchlist", "run_ts", "signal", "risk_level",
+            "total_score", "direct_score", "propagated_score", "price_change_pct",
+            "event_count", "propagation_count", "strongest_event_type",
+            "top_driver_titles", "top_driver_urls", "explanation",
+            "rules_fired", "sector", "region", "name", "run_id",
+        ]
+        for r in score_rows:
+            data.append([
+                r.get("symbol", ""),
+                watchlist_name,
+                now,
+                r.get("signal", "neutral"),
+                r.get("risk_level", "LOW"),
+                float(r.get("total_score", 0.0)),
+                float(r.get("direct_score", 0.0)),
+                float(r.get("propagated_score", 0.0)),
+                r.get("price_change_pct"),
+                int(r.get("event_count", 0)),
+                int(r.get("propagation_count", 0)),
+                r.get("strongest_event_type", ""),
+                list(r.get("top_driver_titles", [])),
+                list(r.get("top_driver_urls", [])),
+                r.get("explanation", ""),
+                list(r.get("rules_fired", [])),
+                r.get("sector", ""),
+                r.get("region", ""),
+                r.get("name", ""),
+                run_id,
+            ])
+        ch.insert(f"`{CH_DB}`.signal_cache", data, column_names=cols)
+        emit("CACHE_WRITE", count=len(data), message=f"Wrote {len(data)} signals to ClickHouse cache")
+    except Exception as exc:
+        err(f"ClickHouse write failed: {exc}")
 
 # ── Replace curl-based call_gemini with native urllib ─────────────────────────
 
@@ -313,10 +409,51 @@ try:
         )
         score["run_id"] = run_id
         score["watchlist"] = watchlist_name
+
+        # Augment with URL and strongest event type (summarize_symbol doesn't include these)
+        top_direct_sorted = sorted(d_facts, key=lambda f: abs(float(f.get("base_event_score", 0.0) or 0.0)), reverse=True)
+        score["strongest_event_type"] = top_direct_sorted[0].get("event_type", "") if top_direct_sorted else ""
+        score["top_driver_urls"] = [f.get("source_url", "") for f in top_direct_sorted[:3]]
+
         score_rows.append(score)
         emit("TICKER_SCORE", **score)
 
     score_rows.sort(key=lambda r: abs(float(r["total_score"])), reverse=True)
+
+    # ── Emit individual event facts for event-centric view ────────────────────
+    for ef in all_event_facts:
+        emit("EVENT_FACT",
+             symbol=ef.get("symbol", ""),
+             event_type=ef.get("event_type", "other"),
+             macro_theme=ef.get("macro_theme", "other"),
+             direction=ef.get("direction", "neutral"),
+             severity_label=ef.get("severity_label", "low"),
+             severity_score=round(float(ef.get("severity_score", 0.0)), 4),
+             confidence=round(float(ef.get("confidence", 0.0)), 4),
+             sentiment_score=round(float(ef.get("sentiment_score", 0.0)), 4),
+             base_event_score=round(float(ef.get("base_event_score", 0.0)), 6),
+             article_title=ef.get("article_title", ""),
+             source_url=ef.get("source_url", ""),
+             summary=ef.get("summary", ""),
+             time_horizon=ef.get("time_horizon", "short_term"),
+             region=ef.get("region", "Global"),
+             extractor=ef.get("extractor", ""),
+             run_id=run_id)
+
+    # ── Emit propagation facts for event-centric view ─────────────────────────
+    for pf in propagation_facts:
+        emit("PROPAGATION_FACT",
+             source_symbol=pf.get("source_symbol", ""),
+             target_symbol=pf.get("target_symbol", ""),
+             event_type=pf.get("event_type", "other"),
+             macro_theme=pf.get("macro_theme", "other"),
+             impact_direction=pf.get("impact_direction", "neutral"),
+             impact_score=round(float(pf.get("impact_score", 0.0)), 6),
+             relationship=pf.get("relationship", ""),
+             edge_strength=round(float(pf.get("edge_strength", 0.0)), 4),
+             article_title=pf.get("article_title", ""),
+             source_url=pf.get("source_url", ""),
+             run_id=run_id)
 
     # ── Sector alerts ─────────────────────────────────────────────────────────
     sector_alerts = build_sector_alerts(all_event_facts, propagation_facts)
@@ -347,6 +484,9 @@ try:
         "warnings": warnings,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    # Persist to ClickHouse cache (non-blocking — errors are logged, not fatal)
+    write_to_clickhouse(score_rows, watchlist_name, run_id)
 
     emit("SUMMARY", **summary, message=f"Run {run_id} complete")
     emit("PIPELINE_DONE",

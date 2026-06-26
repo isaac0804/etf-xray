@@ -1,0 +1,1 @@
+{"affected_symbols": ["AAPL", "GOOGL", "MSFT", "NVDA"], "alert_level": "MEDIUM", "driver_event_types": ["macro_theme", "other"], "explanation": "Technology has medium event pressure from other across 4 symbols.", "macro_theme": "other", "run_id": "b9de8b57cfc72528", "score": -0.319856, "sector": "Technology", "watchlist": "custom"}

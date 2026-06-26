@@ -2,11 +2,12 @@ import { NextRequest } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
+import { queryFreshSignals } from "@/lib/clickhouse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Load root .env.local into process.env at startup
+// Load root .env.local into process.env
 const rootEnv = path.join(process.cwd(), "..", ".env.local");
 if (fs.existsSync(rootEnv)) {
   fs.readFileSync(rootEnv, "utf8").split(/\r?\n/).forEach((line) => {
@@ -20,17 +21,39 @@ if (fs.existsSync(rootEnv)) {
   });
 }
 
+const encoder = new TextEncoder();
+function sse(obj: Record<string, unknown>) {
+  return encoder.encode(`data: ${JSON.stringify(obj)}\n\n`);
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  // Accept either {symbols: ["NVDA","AMD"]} or legacy {topic: "NVDA AMD"}
   const symbols: string[] =
     body.symbols?.length ? body.symbols
     : (body.topic ?? "").trim().split(/[\s,]+/).filter(Boolean);
-
-  const encoder = new TextEncoder();
+  const force: boolean = body.force === true;
 
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
+      // ── Cache check ──────────────────────────────────────────────────────
+      if (!force) {
+        const cached = await queryFreshSignals(symbols);
+        if (cached) {
+          const ts = new Date().toISOString();
+          controller.enqueue(sse({ step: "CACHE_HIT", ts, symbols,
+            message: `Cache hit — ${cached.length} signals from ClickHouse` }));
+          for (const row of cached) {
+            controller.enqueue(sse({ step: "TICKER_SCORE", ts, from_cache: true, ...row }));
+          }
+          controller.enqueue(sse({ step: "SUMMARY", ts, symbols, signal_count: cached.length }));
+          controller.enqueue(sse({ step: "PIPELINE_DONE", ts,
+            message: `Served ${cached.length} cached signals` }));
+          controller.close();
+          return;
+        }
+      }
+
+      // ── Live scan ────────────────────────────────────────────────────────
       const root = path.join(process.cwd(), "..");
       const venvPython = process.platform === "win32"
         ? path.join(root, "venv", "Scripts", "python.exe")
@@ -38,14 +61,12 @@ export async function POST(req: NextRequest) {
       const backendVenv = process.platform === "win32"
         ? path.join(root, "backend", "venv", "Scripts", "python.exe")
         : path.join(root, "backend", "venv", "bin", "python3");
-      const systemPython = process.platform === "win32" ? "python" : "python3";
       const pythonBin = fs.existsSync(venvPython) ? venvPython
         : fs.existsSync(backendVenv) ? backendVenv
-        : systemPython;
+        : (process.platform === "win32" ? "python" : "python3");
 
       const child = spawn(pythonBin, [path.join(root, "run_strategy.py"), ...symbols], {
-        cwd: root,
-        env: { ...process.env },
+        cwd: root, env: { ...process.env },
       });
 
       let buf = "";
@@ -59,21 +80,15 @@ export async function POST(req: NextRequest) {
       });
       child.stderr.on("data", (chunk: Buffer) => {
         const msg = chunk.toString().trim();
-        if (msg) controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({ step: "STDERR", message: msg })}\n\n`
-        ));
+        if (msg) controller.enqueue(sse({ step: "STDERR", message: msg }));
       });
       child.on("close", (code) => {
         if (buf.trim()) controller.enqueue(encoder.encode(`data: ${buf.trim()}\n\n`));
-        controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({ step: "STREAM_END", exitCode: code })}\n\n`
-        ));
+        controller.enqueue(sse({ step: "STREAM_END", exitCode: code }));
         controller.close();
       });
       child.on("error", (err) => {
-        controller.enqueue(encoder.encode(
-          `data: ${JSON.stringify({ step: "PROCESS_ERROR", message: err.message })}\n\n`
-        ));
+        controller.enqueue(sse({ step: "PROCESS_ERROR", message: err.message }));
         controller.close();
       });
     },

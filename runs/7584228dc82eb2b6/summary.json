@@ -1,0 +1,26 @@
+{
+  "run_id": "7584228dc82eb2b6",
+  "watchlist": "custom",
+  "symbols": [
+    "XOM",
+    "CVX",
+    "COP",
+    "SLB",
+    "EOG",
+    "MPC",
+    "PSX"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 48,
+  "event_fact_count": 19,
+  "propagation_fact_count": 0,
+  "signal_count": 7,
+  "sector_alert_count": 2,
+  "top_longs": [],
+  "top_shorts": [
+    "EOG",
+    "COP",
+    "MPC"
+  ],
+  "warnings": []
+}
