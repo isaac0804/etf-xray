@@ -359,18 +359,22 @@ def extract_events_with_keywords(symbol: str, articles: list[dict[str, Any]]) ->
 
 def summarize_symbol(symbol: str, summary: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
     total_score = sum(float(event.get("event_score", 0.0) or 0.0) for event in events)
-    if total_score >= 0.75:
+    if total_score >= 0.35:
         signal = "long"
-    elif total_score <= -0.75:
+    elif total_score <= -0.35:
         signal = "short"
     else:
         signal = "neutral"
 
     sorted_events = sorted(events, key=lambda item: abs(float(item.get("event_score", 0.0) or 0.0)), reverse=True)
     strongest = sorted_events[0] if sorted_events else {}
+    n = len(sorted_events)
+    top_type = strongest.get("event_type", "none")
+    top_score = strongest.get("event_score", 0.0)
     explanation = (
-        f"{symbol} is {signal} because {len(sorted_events)} material events were scored. "
-        f"Top driver: {strongest.get('event_type', 'none')}."
+        f"{symbol} is {signal}: {n} event{'s' if n != 1 else ''} scored "
+        f"(cumulative {total_score:+.3f}). "
+        f"Top driver: {top_type} ({top_score:+.3f})."
     )
 
     return {

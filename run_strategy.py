@@ -47,20 +47,84 @@ def err(msg: str) -> None:
 
 # ── Imports from teammate's modules ──────────────────────────────────────────
 
+import urllib.request, urllib.error
+
 try:
+    import ask_gemini as _ask_gemini
+    import event_strategy as _event_strategy
     from event_strategy import (
-        build_tavily_query, normalize_articles,
+        normalize_articles,
         extract_events_with_gemini, extract_events_with_keywords,
         summarize_symbol, write_jsonl, json_dumps,
-        DEFAULT_RESULTS_PER_SYMBOL, RUNS_DIR,
+        RUNS_DIR,
     )
     from market_data import fetch_yahoo_chart, summarize_yahoo_chart
-    from search_tavily import ENV_PATH, call_tavily, load_dotenv
+    from search_tavily import ENV_PATH, API_URL, load_dotenv
     from ask_gemini import get_api_key
     from watchlists import resolve_symbols
 except ImportError as e:
     emit("ERROR", message=f"Import failed: {e}")
     sys.exit(1)
+
+RESULTS_PER_SYMBOL = 8
+SNIPPET_MAX_CHARS  = 400   # keep prompt under Gemini context limit
+
+# ── Replace curl-based call_gemini with native urllib (avoids Windows arg limit) ──
+
+def _call_gemini_native(api_key: str, prompt: str, model: str | None = None) -> dict:
+    model_name = model or _ask_gemini.get_model()
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model_name}:generateContent"
+    )
+    payload = _ask_gemini.build_payload(prompt)
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return json.loads(resp.read().decode())
+
+# Patch event_strategy's local binding (from ask_gemini import call_gemini creates
+# a module-level name in event_strategy — patch that directly)
+_event_strategy.call_gemini = _call_gemini_native
+
+NEWS_DOMAINS = [
+    "reuters.com", "bloomberg.com", "cnbc.com", "wsj.com",
+    "marketwatch.com", "ft.com", "barrons.com", "seekingalpha.com",
+    "finance.yahoo.com", "investing.com", "thestreet.com",
+]
+
+def call_tavily_news(api_key: str, query: str) -> dict:
+    """Advanced news-focused Tavily call: 7-day recency, 8 results."""
+    payload = {
+        "api_key": api_key,
+        "query": query,
+        "topic": "news",
+        "search_depth": "advanced",
+        "days": 7,
+        "max_results": RESULTS_PER_SYMBOL,
+        "include_answer": True,
+        "include_domains": NEWS_DOMAINS,
+    }
+    req = urllib.request.Request(
+        API_URL,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+def build_news_query(symbol: str, summary: dict) -> str:
+    name = summary.get("name", symbol)
+    return (
+        f"{name} {symbol} stock news past week: "
+        "earnings results guidance analyst upgrade downgrade "
+        "regulatory action lawsuit M&A acquisition"
+    )
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 
@@ -103,11 +167,11 @@ try:
             warnings.append(w)
             err(w)
 
-        # Tavily news search
-        tavily_query = build_tavily_query(symbol, price_summary)
+        # Tavily news search (advanced, 7-day, news-only domains)
+        tavily_query = build_news_query(symbol, price_summary)
         emit("TAVILY_FETCH", symbol=symbol, message=f"Searching news for {symbol}")
         try:
-            tavily_data = call_tavily(tavily_key, tavily_query)
+            tavily_data = call_tavily_news(tavily_key, tavily_query)
         except Exception as exc:
             w = f"Tavily failed for {symbol}: {exc}"
             warnings.append(w)
@@ -115,7 +179,9 @@ try:
             tavily_data = {"results": [], "answer": ""}
 
         tavily_answer = str(tavily_data.get("answer", "")).strip()
-        articles = normalize_articles(symbol, tavily_data, tavily_query)[:DEFAULT_RESULTS_PER_SYMBOL]
+        articles = normalize_articles(symbol, tavily_data, tavily_query)[:RESULTS_PER_SYMBOL]
+        for a in articles:
+            a["snippet"] = a["snippet"][:SNIPPET_MAX_CHARS]
         emit("TAVILY_DONE", symbol=symbol, count=len(articles),
              message=f"{len(articles)} articles retrieved for {symbol}")
 
