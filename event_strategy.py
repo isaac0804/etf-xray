@@ -127,8 +127,9 @@ POSITIVE_WORDS = {"surge", "gain", "strong", "wins", "expands", "growth", "recor
 NEGATIVE_WORDS = {"drop", "weak", "falls", "cuts", "risk", "delay", "bearish", "concern"}
 
 
-def parse_args(argv: list[str]) -> tuple[bool, str | None, int, list[str]]:
+def parse_args(argv: list[str]) -> tuple[bool, bool, str | None, int, list[str]]:
     raw = False
+    sync_clickhouse = False
     watchlist_name: str | None = None
     results_per_symbol = DEFAULT_RESULTS_PER_SYMBOL
     symbols: list[str] = []
@@ -138,6 +139,10 @@ def parse_args(argv: list[str]) -> tuple[bool, str | None, int, list[str]]:
         arg = argv[index]
         if arg == "--raw":
             raw = True
+            index += 1
+            continue
+        if arg == "--sync-clickhouse":
+            sync_clickhouse = True
             index += 1
             continue
         if arg == "--watchlist" and index + 1 < len(argv):
@@ -151,7 +156,7 @@ def parse_args(argv: list[str]) -> tuple[bool, str | None, int, list[str]]:
         symbols.append(arg)
         index += 1
 
-    return raw, watchlist_name, results_per_symbol, symbols
+    return raw, sync_clickhouse, watchlist_name, results_per_symbol, symbols
 
 
 def clamp(value: float, lower: float, upper: float) -> float:
@@ -598,6 +603,7 @@ def run_pipeline(
     symbols: list[str],
     results_per_symbol: int,
     raw: bool,
+    sync_clickhouse: bool = False,
 ) -> int:
     load_dotenv(ENV_PATH)
     tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
@@ -748,6 +754,19 @@ def run_pipeline(
     write_jsonl(run_dir / "ticker_scores.jsonl", signal_rows)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
+    clickhouse_sync_message = ""
+    if sync_clickhouse:
+        try:
+            from sync_clickhouse import main as sync_clickhouse_main
+
+            sync_status = sync_clickhouse_main([str(run_dir)])
+            if sync_status == 0:
+                clickhouse_sync_message = "ClickHouse sync: success"
+            else:
+                clickhouse_sync_message = f"ClickHouse sync: failed with status {sync_status}"
+        except Exception as exc:  # noqa: BLE001
+            clickhouse_sync_message = f"ClickHouse sync: failed ({exc})"
+
     if raw:
         print(
             json.dumps(
@@ -755,6 +774,7 @@ def run_pipeline(
                     "summary": summary,
                     "signals": signal_rows,
                     "sector_alerts": sector_alert_rows,
+                    "clickhouse_sync": clickhouse_sync_message,
                 },
                 indent=2,
             )
@@ -783,6 +803,9 @@ def run_pipeline(
                 f"symbols={','.join(alert['affected_symbols'])}"
             )
 
+    if clickhouse_sync_message:
+        print(f"\n{clickhouse_sync_message}")
+
     if warnings:
         print("\nWarnings")
         print("--------")
@@ -792,9 +815,9 @@ def run_pipeline(
 
 
 def main(argv: list[str]) -> int:
-    raw, watchlist_name, results_per_symbol, symbol_args = parse_args(argv)
+    raw, sync_clickhouse, watchlist_name, results_per_symbol, symbol_args = parse_args(argv)
     selected_watchlist, symbols = resolve_symbols(symbol_args, watchlist_name)
-    return run_pipeline(selected_watchlist, symbols, results_per_symbol, raw)
+    return run_pipeline(selected_watchlist, symbols, results_per_symbol, raw, sync_clickhouse=sync_clickhouse)
 
 
 if __name__ == "__main__":

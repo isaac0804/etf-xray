@@ -62,6 +62,13 @@ cd /Users/jc/coding/news2signal
 python3 event_strategy.py TSM NVDA AMD --results 2 --raw
 ```
 
+Run and sync directly to ClickHouse:
+
+```bash
+cd /Users/jc/coding/news2signal
+python3 event_strategy.py TSM NVDA AMD --results 2 --sync-clickhouse
+```
+
 ## Smoke Tests
 
 Component-level check:
@@ -126,6 +133,20 @@ Import shape is `JSONEachRow`, for example:
 
 ```bash
 clickhouse-client --query="INSERT INTO signal_outputs FORMAT JSONEachRow" < runs/<run_id>/signal_outputs.jsonl
+```
+
+You can also sync a completed run with:
+
+```bash
+cd /Users/jc/coding/news2signal
+python3 sync_clickhouse.py
+```
+
+or a specific run id:
+
+```bash
+cd /Users/jc/coding/news2signal
+python3 sync_clickhouse.py 1d0d8e25b02b1ac9
 ```
 
 ## Strategy Logic

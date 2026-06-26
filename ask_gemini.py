@@ -12,6 +12,7 @@ import textwrap
 from search_tavily import ENV_PATH, load_dotenv
 
 DEFAULT_MODEL = "gemini-3.5-flash"
+DEFAULT_FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 DEFAULT_PROMPT = (
     "Summarize whether recent news flow is bullish or bearish for NVDA in 4 "
     "short bullet points."
@@ -27,6 +28,23 @@ def get_api_key() -> str:
 
 def get_model() -> str:
     return os.environ.get("GEMINI_MODEL", "").strip() or DEFAULT_MODEL
+
+
+def get_model_candidates(model: str | None = None) -> list[str]:
+    """Return preferred Gemini models in retry order."""
+    requested = (model or get_model()).strip() or DEFAULT_MODEL
+    env_fallbacks = [
+        item.strip()
+        for item in os.environ.get("GEMINI_FALLBACK_MODELS", "").split(",")
+        if item.strip()
+    ]
+    fallbacks = env_fallbacks or DEFAULT_FALLBACK_MODELS
+
+    candidates: list[str] = []
+    for candidate in [requested, *fallbacks]:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
 
 
 def build_payload(prompt: str) -> dict[str, object]:
@@ -46,8 +64,23 @@ def build_payload(prompt: str) -> dict[str, object]:
     }
 
 
-def call_gemini(api_key: str, prompt: str, model: str | None = None) -> dict[str, object]:
-    model_name = model or get_model()
+def should_retry_on_model_fallback(exc: subprocess.CalledProcessError) -> bool:
+    """Retry smaller models only for transient/quota style failures."""
+    details = f"{exc.stdout}\n{exc.stderr}".lower()
+    retry_markers = [
+        "quota",
+        "429",
+        "resource_exhausted",
+        "overloaded",
+        "503",
+        "unavailable",
+        "rate limit",
+    ]
+    return any(marker in details for marker in retry_markers)
+
+
+def call_gemini_once(api_key: str, prompt: str, model_name: str) -> dict[str, object]:
+    """Call a single Gemini model once."""
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model_name}:generateContent"
@@ -72,7 +105,28 @@ def call_gemini(api_key: str, prompt: str, model: str | None = None) -> dict[str
         text=True,
         timeout=30,
     )
-    return json.loads(result.stdout)
+    data = json.loads(result.stdout)
+    if isinstance(data, dict):
+        data["_model_used"] = model_name
+    return data
+
+
+def call_gemini(api_key: str, prompt: str, model: str | None = None) -> dict[str, object]:
+    """Call Gemini with automatic fallback to smaller models when appropriate."""
+    last_error: subprocess.CalledProcessError | None = None
+
+    for model_name in get_model_candidates(model):
+        try:
+            return call_gemini_once(api_key, prompt, model_name)
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            if should_retry_on_model_fallback(exc):
+                continue
+            raise
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No Gemini models available to try.")
 
 
 def extract_text(data: dict[str, object]) -> str:
@@ -142,6 +196,9 @@ def main(argv: list[str]) -> int:
 
     text = extract_text(data)
     if text:
+        model_used = data.get("_model_used")
+        if isinstance(model_used, str) and model_used:
+            print(f"Model used: {model_used}")
         print(textwrap.fill(text, width=90))
         return 0
 
