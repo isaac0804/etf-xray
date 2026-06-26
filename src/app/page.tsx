@@ -353,229 +353,277 @@ function ActivityEntry({ entry }: { entry: LogEntry }) {
   );
 }
 
-// ── Event group row ───────────────────────────────────────────────────────────
+// ── Event card (news-feed style) ──────────────────────────────────────────────
 
 const SEV_COLOR: Record<string, string> = { high: "#ef5350", medium: "#f59e0b", low: "#4e5263" };
-const DIR_ICON: Record<string, string>  = { up: "↑", down: "↓", neutral: "→", mixed: "↕" };
 const DIR_COLOR: Record<string, string> = { up: "#26a69a", down: "#ef5350", neutral: "#4e5263", mixed: "#f59e0b" };
 const THEME_COLOR: Record<string, string> = {
   geopolitical_risk: "#ef5350", supply_chain: "#f59e0b", earnings: "#26a69a",
   sell_side: "#818cf8", innovation: "#34d399", regulation: "#ef5350",
   strategic_activity: "#7dd3a8", demand: "#60a5fa", other: "#4e5263",
 };
+const SEV_BG: Record<string, string> = {
+  high: "rgba(239,83,80,0.08)", medium: "rgba(245,158,11,0.08)", low: "rgba(78,82,99,0.08)",
+};
 
-function EventGroupRow({ group, rank }: { group: EventGroup; rank: number }) {
-  const [open, setOpen] = useState(false);
-  const dirColor = DIR_COLOR[group.direction] ?? "#4e5263";
-  const dirIcon  = DIR_ICON[group.direction]  ?? "→";
-  const sevColor = SEV_COLOR[group.max_severity] ?? "#4e5263";
+function EventCard({ group }: { group: EventGroup }) {
+  const [expanded, setExpanded] = useState(false);
+  const dirColor   = DIR_COLOR[group.direction] ?? "#4e5263";
+  const sevColor   = SEV_COLOR[group.max_severity] ?? "#4e5263";
   const themeColor = THEME_COLOR[group.macro_theme] ?? "#4e5263";
-  const totalAbs = Math.abs(group.total_impact);
-  const barPct   = Math.min((totalAbs / 1.5) * 100, 100);
-  const allTickers = [
-    ...group.direct_tickers.map((t) => t.symbol),
-    ...group.propagated_tickers.map((t) => t.target_symbol),
-  ].filter((v, i, a) => a.indexOf(v) === i);
+  const totalAbs   = Math.abs(group.total_impact);
+  const barPct     = Math.min((totalAbs / 1.5) * 100, 100);
+  const isNeg      = group.total_impact < 0;
+  const topFact    = group.facts[0];
+  const domain     = topFact?.source_url
+    ? (() => { try { return new URL(topFact.source_url).hostname.replace(/^www\./, ""); } catch { return ""; } })()
+    : "";
 
   return (
-    <>
-      <tr
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          borderBottom: "1px solid #1e2230", cursor: "pointer",
-          background: open ? "#171c2b" : "transparent", transition: "background 0.1s",
-        }}
-        onMouseEnter={(e) => { if (!open) e.currentTarget.style.background = "#1b2030"; }}
-        onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = "transparent"; }}
-      >
-        {/* # */}
-        <td style={{ padding: "11px 8px 11px 16px", fontSize: 10, color: "#3a4060", width: 24, fontFamily: "monospace" }}>
-          {rank}
-        </td>
+    <div
+      style={{
+        borderBottom: "1px solid #1a1f2e",
+        borderLeft: `3px solid ${dirColor}`,
+        background: expanded ? "#161c2c" : "transparent",
+        transition: "background 0.12s",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => { if (!expanded) e.currentTarget.style.background = "#14192a"; }}
+      onMouseLeave={(e) => { if (!expanded) e.currentTarget.style.background = "transparent"; }}
+      onClick={() => setExpanded((v) => !v)}
+    >
+      {/* ── Card body ── */}
+      <div style={{ padding: "14px 20px 13px 18px" }}>
 
-        {/* Event type */}
-        <td style={{ padding: "11px 14px 11px 8px", minWidth: 180 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#d1d4dc" }}>
+        {/* Row 1: meta tags */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          {/* Event type badge */}
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+            padding: "2px 8px", borderRadius: 3,
+            background: SEV_BG[group.max_severity] ?? "transparent",
+            color: sevColor,
+            border: `1px solid ${sevColor}30`,
+          }}>
             {fmtEvent(group.event_type)}
-          </div>
-          <div style={{ marginTop: 3, display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={{ fontSize: 10, fontFamily: "monospace", color: themeColor }}>
-              {group.macro_theme.replace(/_/g, " ")}
-            </span>
-          </div>
-        </td>
+          </span>
 
-        {/* Direction + Severity */}
-        <td style={{ padding: "11px 12px", width: 90 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 16, lineHeight: 1, color: dirColor, fontWeight: 700 }}>{dirIcon}</span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: sevColor, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              {group.max_severity}
-            </span>
-          </div>
-        </td>
+          {/* Theme pill */}
+          <span style={{
+            fontSize: 10, padding: "2px 7px", borderRadius: 10,
+            background: `${themeColor}18`, color: themeColor,
+            border: `1px solid ${themeColor}30`,
+          }}>
+            {group.macro_theme.replace(/_/g, " ")}
+          </span>
 
-        {/* Impact bar */}
-        <td style={{ padding: "11px 12px", width: 130 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <div style={{ width: 52, height: 3, background: "#2a2e39", borderRadius: 2, overflow: "hidden", flexShrink: 0 }}>
+          {/* Score */}
+          <span style={{
+            fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: dirColor,
+            marginLeft: "auto",
+          }}>
+            {group.total_impact > 0 ? "+" : ""}{group.total_impact.toFixed(3)}
+          </span>
+        </div>
+
+        {/* Row 2: headline */}
+        {topFact?.article_title && (
+          <div style={{ marginBottom: 9 }}>
+            {topFact.source_url ? (
+              <a
+                href={topFact.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 14, fontWeight: 600, color: "#c8cdd8", lineHeight: 1.4, textDecoration: "none", display: "block" }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#e8eaf0")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#c8cdd8")}
+              >
+                {topFact.article_title}
+              </a>
+            ) : (
+              <span style={{ fontSize: 14, fontWeight: 600, color: "#c8cdd8", lineHeight: 1.4, display: "block" }}>
+                {topFact.article_title}
+              </span>
+            )}
+            {domain && (
+              <span style={{ fontSize: 10, color: "#3a4060", marginTop: 3, display: "block" }}>{domain}</span>
+            )}
+          </div>
+        )}
+
+        {/* Row 3: summary (if any) */}
+        {topFact?.summary && (
+          <p style={{ fontSize: 12, color: "#5a6480", lineHeight: 1.6, marginBottom: 10, margin: "0 0 10px" }}>
+            {topFact.summary}
+          </p>
+        )}
+
+        {/* Row 4: affected tickers + impact bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {/* Direct tickers */}
+          {group.direct_tickers.slice(0, 6).map((t) => (
+            <span key={t.symbol} style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 4,
+              background: isNeg ? "rgba(239,83,80,0.10)" : "rgba(38,166,154,0.10)",
+              color: isNeg ? "#ef8080" : "#5bc8c0",
+              border: `1px solid ${isNeg ? "rgba(239,83,80,0.25)" : "rgba(38,166,154,0.25)"}`,
+              fontFamily: "monospace",
+            }}>
+              {t.symbol}
+              <span style={{ fontSize: 9, color: SEV_COLOR[t.severity_label], fontWeight: 600, letterSpacing: "0.04em" }}>
+                {t.severity_label.slice(0, 3).toUpperCase()}
+              </span>
+            </span>
+          ))}
+
+          {/* Propagated tickers (dimmer) */}
+          {group.propagated_tickers.slice(0, 4).map((t) => (
+            <span key={`p-${t.target_symbol}`} style={{
+              display: "inline-flex", alignItems: "center", gap: 3,
+              fontSize: 11, fontWeight: 600, padding: "3px 7px", borderRadius: 4,
+              background: "rgba(245,158,11,0.07)",
+              color: "#b07030",
+              border: "1px solid rgba(245,158,11,0.15)",
+              fontFamily: "monospace",
+            }}>
+              <span style={{ fontSize: 9, opacity: 0.6 }}>↳</span>{t.target_symbol}
+            </span>
+          ))}
+
+          {/* Impact bar (right-aligned) */}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <div style={{ width: 64, height: 3, background: "#1e2230", borderRadius: 2, overflow: "hidden" }}>
               <div style={{ width: `${barPct}%`, height: "100%", background: dirColor, borderRadius: 2 }} />
             </div>
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: dirColor, minWidth: 48 }}>
-              {group.total_impact > 0 ? "+" : ""}{group.total_impact.toFixed(3)}
+            <span style={{ fontSize: 9, color: "#3a4060", fontFamily: "monospace" }}>
+              {group.direct_tickers.length}d{group.propagated_tickers.length > 0 ? ` · ${group.propagated_tickers.length}p` : ""}
             </span>
           </div>
-        </td>
+        </div>
 
-        {/* Affected tickers */}
-        <td style={{ padding: "11px 12px" }}>
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {group.direct_tickers.slice(0, 5).map((t) => (
-              <span key={t.symbol} style={{
-                fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 3,
-                background: "rgba(41,98,255,0.12)", color: "#6b8fff",
-                border: "1px solid rgba(41,98,255,0.25)", fontFamily: "monospace",
-              }}>
-                {t.symbol}
-              </span>
-            ))}
-            {group.propagated_tickers.slice(0, 4).map((t) => (
-              <span key={`p-${t.target_symbol}`} style={{
-                fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 3,
-                background: "rgba(245,158,11,0.10)", color: "#a07020",
-                border: "1px solid rgba(245,158,11,0.20)", fontFamily: "monospace",
-              }}>
-                ↳{t.target_symbol}
-              </span>
-            ))}
-          </div>
-          <div style={{ fontSize: 9, color: "#3a4060", marginTop: 3 }}>
-            {group.direct_tickers.length} direct
-            {group.propagated_tickers.length > 0 && ` · ${group.propagated_tickers.length} propagated`}
-          </div>
-        </td>
+      </div>
 
-        {/* Headline */}
-        <td style={{ padding: "11px 12px" }}>
-          <div style={{ fontSize: 11, color: "#5a6180", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 300 }}>
-            {group.facts[0]?.article_title ?? "—"}
-          </div>
-        </td>
+      {/* ── Expanded detail ── */}
+      {expanded && (
+        <div
+          style={{ padding: "0 20px 16px 21px", borderTop: "1px solid #1a1f2e" }}
+          onClick={(e) => e.stopPropagation()}
+        >
 
-        {/* Expander */}
-        <td style={{ padding: "11px 12px 11px 4px", width: 16, fontSize: 9, color: "#2a2e39", textAlign: "center" }}>
-          {open ? "▲" : "▼"}
-        </td>
-      </tr>
-
-      {open && (
-        <tr style={{ background: "#12172280", borderBottom: "1px solid #1e2230" }}>
-          <td colSpan={7} style={{ padding: "14px 16px 16px 58px" }}>
-
-            {/* Direct impact section */}
-            {group.direct_tickers.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#3a4060", marginBottom: 7 }}>
-                  Direct impact
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {group.direct_tickers.map((t) => (
-                    <div key={t.symbol} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#6b8fff", fontFamily: "monospace", minWidth: 50 }}>
-                        {t.symbol}
-                      </span>
-                      <span style={{ fontSize: 10, color: SEV_COLOR[t.severity_label] ?? "#4e5263", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        {t.severity_label}
-                      </span>
-                      <span style={{ fontSize: 11, fontFamily: "monospace", color: t.base_event_score >= 0 ? "#26a69a" : "#ef5350" }}>
-                        {t.base_event_score >= 0 ? "+" : ""}{t.base_event_score.toFixed(3)}
-                      </span>
+          {/* All source articles */}
+          {group.facts.length > 1 && (
+            <div style={{ marginTop: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#2a3050", marginBottom: 8 }}>
+                All sources ({group.facts.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {group.facts.map((f, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, color: isNeg ? "#ef8080" : "#5bc8c0",
+                      fontFamily: "monospace", flexShrink: 0, minWidth: 44,
+                      marginTop: 1,
+                    }}>
+                      {f.symbol}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {f.source_url ? (
+                        <a href={f.source_url} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 12, color: "#7080a0", lineHeight: 1.5, textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = "#9fb8d8")}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = "#7080a0")}
+                        >
+                          {f.article_title}
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "#7080a0", lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                          {f.article_title}
+                        </span>
+                      )}
+                      {f.summary && (
+                        <span style={{ fontSize: 11, color: "#3a4060", lineHeight: 1.5 }}>{f.summary}</span>
+                      )}
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Propagation section */}
-            {group.propagated_tickers.length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#3a4060", marginBottom: 7 }}>
-                  Propagation ripple
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {group.propagated_tickers.map((t, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 10, color: "#a07020", fontFamily: "monospace", minWidth: 14 }}>↳</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "#c8a040", fontFamily: "monospace", minWidth: 50 }}>
-                        {t.target_symbol}
-                      </span>
-                      <span style={{ fontSize: 10, color: "#4e5263" }}>
-                        via <span style={{ color: "#6b8fff" }}>{t.source_symbol}</span>
-                      </span>
-                      <span style={{ fontSize: 10, color: "#4e5263" }}>
-                        {t.relationship.replace(/_/g, " ")}
-                      </span>
-                      <span style={{ fontSize: 11, fontFamily: "monospace", color: t.impact_score >= 0 ? "#26a69a" : "#ef5350", marginLeft: "auto" }}>
-                        {t.impact_score >= 0 ? "+" : ""}{t.impact_score.toFixed(3)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Source articles */}
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#3a4060", marginBottom: 7 }}>
-                Sources
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                {group.facts.slice(0, 4).map((f, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 9, color: "#2962ff", fontFamily: "monospace", flexShrink: 0, marginTop: 2 }}>{f.symbol}</span>
-                    {f.source_url ? (
-                      <a href={f.source_url} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 11, color: "#6b7fb0", lineHeight: 1.5, textDecoration: "none" }}
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = "#9fb8d8")}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7fb0")}
-                      >
-                        {f.article_title || f.source_url}
-                      </a>
-                    ) : (
-                      <span style={{ fontSize: 11, color: "#6b7fb0", lineHeight: 1.5 }}>{f.article_title}</span>
-                    )}
-                    {f.summary && (
-                      <span style={{ fontSize: 10, color: "#3a4060", marginLeft: "auto", flexShrink: 0, maxWidth: 240, textAlign: "right" }}>
-                        {f.summary.length > 80 ? f.summary.slice(0, 80) + "…" : f.summary}
-                      </span>
-                    )}
+                    <span style={{
+                      fontSize: 11, fontFamily: "monospace", flexShrink: 0,
+                      color: f.base_event_score >= 0 ? "#26a69a" : "#ef5350",
+                    }}>
+                      {f.base_event_score >= 0 ? "+" : ""}{f.base_event_score.toFixed(3)}
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
+          )}
 
-          </td>
-        </tr>
+          {/* Propagation ripple */}
+          {group.propagated_tickers.length > 0 && (
+            <div style={{ marginTop: group.facts.length > 1 ? 0 : 14 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "#2a3050", marginBottom: 8 }}>
+                Contagion ripple
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {group.propagated_tickers.map((t, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 10, color: "#6b8fff", fontFamily: "monospace", fontWeight: 700, minWidth: 44 }}>
+                      {t.source_symbol}
+                    </span>
+                    <span style={{ fontSize: 10, color: "#2a3050" }}>→</span>
+                    <span style={{ fontSize: 10, color: "#b07030", fontFamily: "monospace", fontWeight: 700, minWidth: 44 }}>
+                      {t.target_symbol}
+                    </span>
+                    <span style={{ fontSize: 10, color: "#3a4060", flex: 1 }}>
+                      {t.relationship.replace(/_/g, " ")}
+                    </span>
+                    <span style={{
+                      fontSize: 11, fontFamily: "monospace", flexShrink: 0,
+                      color: t.impact_score >= 0 ? "#26a69a" : "#ef5350",
+                    }}>
+                      {t.impact_score >= 0 ? "+" : ""}{t.impact_score.toFixed(3)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [preset, setPreset]       = useState("mag7");
-  const [symbols, setSymbols]     = useState<string[]>(PRESETS.mag7);
-  const [scores, setScores]       = useState<TickerScore[]>([]);
-  const [logs, setLogs]           = useState<LogEntry[]>([]);
-  const [running, setRunning]     = useState(false);
-  const [fromCache, setFromCache] = useState(false);
-  const [lastScan, setLastScan]   = useState<Date | null>(null);
-  const [runId, setRunId]         = useState("");
+  const [preset, setPreset]         = useState("mag7");
+  const [symbols, setSymbols]       = useState<string[]>(PRESETS.mag7);
+  const [scores, setScores]         = useState<TickerScore[]>([]);
+  const [eventFacts, setEventFacts] = useState<EventFact[]>([]);
+  const [propFacts, setPropFacts]   = useState<PropagationFact[]>([]);
+  const [logs, setLogs]             = useState<LogEntry[]>([]);
+  const [running, setRunning]       = useState(false);
+  const [fromCache, setFromCache]   = useState(false);
+  const [lastScan, setLastScan]     = useState<Date | null>(null);
+  const [runId, setRunId]           = useState("");
+  const [view, setView]             = useState<"ticker" | "event">("ticker");
+  const [evtFilter, setEvtFilter]   = useState<"all" | "up" | "down">("all");
 
-  // Per-preset client-side cache (persists within session)
-  const sessionCache = useRef<Map<string, TickerScore[]>>(new Map());
+  // Per-preset client-side caches (persist within session)
+  const sessionCache      = useRef<Map<string, TickerScore[]>>(new Map());
+  const sessionEventFacts = useRef<Map<string, EventFact[]>>(new Map());
+  const sessionPropFacts  = useRef<Map<string, PropagationFact[]>>(new Map());
+
+  // Per-preset scan status for tab indicators
+  const [presetStatus, setPresetStatus] = useState<Record<string, "idle" | "scanning" | "done">>(
+    () => Object.fromEntries(Object.keys(PRESETS).map((k) => [k, "idle"]))
+  );
+
+  // Ref so async scan callbacks always see the currently-active tab
+  const presetRef = useRef(preset);
+  useEffect(() => { presetRef.current = preset; }, [preset]);
 
   const idRef     = useRef(0);
   const logEndRef = useRef<HTMLDivElement>(null);
@@ -592,37 +640,46 @@ export default function Home() {
   }, []);
 
   const pickPreset = (name: string) => {
+    presetRef.current = name;
     setPreset(name);
     setSymbols(PRESETS[name]);
-    // Restore from session cache if available
+    setLogs([]); setRunId("");
     const cached = sessionCache.current.get(name);
     if (cached) {
       setScores(cached);
+      setEventFacts(sessionEventFacts.current.get(name) ?? []);
+      setPropFacts(sessionPropFacts.current.get(name) ?? []);
       setFromCache(true);
     } else {
-      setScores([]);
-      setFromCache(false);
+      setScores([]); setEventFacts([]); setPropFacts([]); setFromCache(false);
     }
-    setLogs([]);
-    setRunId("");
     setLastScan(null);
   };
 
-  const scan = useCallback(async () => {
-    if (running || !symbols.length) return;
-    setRunning(true); setLogs([]); setScores([]); setRunId(""); setFromCache(false);
+  // Core scan — works for any preset, updates UI only when that preset is active
+  const scanPreset = useCallback(async (name: string, syms: string[], force = false) => {
+    const isActive = () => presetRef.current === name;
+
+    setPresetStatus((p) => ({ ...p, [name]: "scanning" }));
+    if (isActive()) {
+      setRunning(true); setLogs([]); setScores([]); setEventFacts([]);
+      setPropFacts([]); setRunId(""); setFromCache(false);
+    }
+
     try {
       const res = await fetch("/api/brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols }),
+        body: JSON.stringify({ symbols: syms, force }),
       });
       if (!res.body) throw new Error("No response stream");
 
       const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let buf = "";
-      const batchScores: TickerScore[] = [];
+      const dec    = new TextDecoder();
+      let buf      = "";
+      const batchScores: TickerScore[]     = [];
+      const batchEF:     EventFact[]       = [];
+      const batchPF:     PropagationFact[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -635,27 +692,154 @@ export default function Home() {
           if (!line) continue;
           try {
             const p = JSON.parse(line) as Record<string, unknown>;
-            addLog(p);
+            if (isActive()) addLog(p);
             if (p.step === "TICKER_SCORE") {
-              const ts = p as unknown as TickerScore;
-              batchScores.push(ts);
-              setScores([...batchScores].sort((a, b) => Math.abs(b.total_score) - Math.abs(a.total_score)));
+              batchScores.push(p as unknown as TickerScore);
+              if (isActive()) setScores([...batchScores].sort((a, b) => Math.abs(b.total_score) - Math.abs(a.total_score)));
             }
-            if (p.step === "CACHE_HIT") setFromCache(true);
-            if (p.step === "SUMMARY" && p.run_id) setRunId(String(p.run_id));
+            if (p.step === "EVENT_FACT") {
+              batchEF.push(p as unknown as EventFact);
+              if (isActive()) setEventFacts([...batchEF]);
+            }
+            if (p.step === "PROPAGATION_FACT") {
+              batchPF.push(p as unknown as PropagationFact);
+              if (isActive()) setPropFacts([...batchPF]);
+            }
+            if (p.step === "CACHE_HIT" && isActive()) setFromCache(true);
+            if (p.step === "SUMMARY" && p.run_id && isActive()) setRunId(String(p.run_id));
           } catch { /* skip */ }
         }
       }
 
-      // Save to session cache keyed by preset
-      sessionCache.current.set(preset, [...batchScores].sort((a, b) => Math.abs(b.total_score) - Math.abs(a.total_score)));
-      setLastScan(new Date());
+      const sortedScores = [...batchScores].sort((a, b) => Math.abs(b.total_score) - Math.abs(a.total_score));
+      sessionCache.current.set(name, sortedScores);
+      sessionEventFacts.current.set(name, batchEF);
+      sessionPropFacts.current.set(name, batchPF);
+
+      if (isActive()) {
+        setScores(sortedScores); setEventFacts(batchEF); setPropFacts(batchPF);
+        setLastScan(new Date());
+      }
+      setPresetStatus((p) => ({ ...p, [name]: "done" }));
     } catch (e) {
-      addLog({ step: "ERROR", message: String(e) });
+      if (isActive()) addLog({ step: "ERROR", message: String(e) });
+      setPresetStatus((p) => ({ ...p, [name]: "idle" }));
     } finally {
-      setRunning(false);
+      if (isActive()) setRunning(false);
     }
-  }, [running, symbols, addLog, preset]);
+  }, [addLog]);
+
+  // On mount: scan every preset sequentially (ClickHouse cache makes stale-hits instant)
+  const didScanAll = useRef(false);
+  useEffect(() => {
+    if (didScanAll.current) return;
+    didScanAll.current = true;
+    (async () => {
+      for (const [name, syms] of Object.entries(PRESETS)) {
+        await scanPreset(name, syms);
+      }
+    })();
+  // scanPreset is stable (addLog has [] deps); only run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Build event groups ─────────────────────────────────────────────────────
+
+  const eventGroups = useMemo<EventGroup[]>(() => {
+    const grouped = new Map<string, {
+      facts: EventFact[];
+      macro_themes: string[];
+      directions: string[];
+      direct: Map<string, { base_event_score: number; severity_label: string }>;
+      propagated: PropagationFact[];
+    }>();
+
+    for (const ef of eventFacts) {
+      const key = ef.event_type;
+      if (!grouped.has(key)) {
+        grouped.set(key, { facts: [], macro_themes: [], directions: [], direct: new Map(), propagated: [] });
+      }
+      const g = grouped.get(key)!;
+      g.facts.push(ef);
+      g.macro_themes.push(ef.macro_theme);
+      g.directions.push(ef.direction);
+      // Merge per-symbol: keep highest |score| fact
+      const existing = g.direct.get(ef.symbol);
+      if (!existing || Math.abs(ef.base_event_score) > Math.abs(existing.base_event_score)) {
+        g.direct.set(ef.symbol, { base_event_score: ef.base_event_score, severity_label: ef.severity_label });
+      }
+    }
+
+    for (const pf of propFacts) {
+      const key = pf.event_type;
+      if (grouped.has(key)) {
+        grouped.get(key)!.propagated.push(pf);
+      }
+    }
+
+    const groups: EventGroup[] = [];
+    for (const [event_type, g] of grouped.entries()) {
+      // dominant macro_theme
+      const themeCounts: Record<string, number> = {};
+      for (const t of g.macro_themes) themeCounts[t] = (themeCounts[t] ?? 0) + 1;
+      const macro_theme = Object.entries(themeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "other";
+
+      // direction
+      const ups   = g.directions.filter((d) => d === "up").length;
+      const downs = g.directions.filter((d) => d === "down").length;
+      const direction: EventGroup["direction"] =
+        ups > 0 && downs === 0 ? "up"
+        : downs > 0 && ups === 0 ? "down"
+        : ups > 0 && downs > 0 ? "mixed"
+        : "neutral";
+
+      // severity
+      const sevOrder = { high: 2, medium: 1, low: 0 };
+      const max_severity: EventGroup["max_severity"] = g.facts.reduce<EventGroup["max_severity"]>((best, f) => {
+        return (sevOrder[f.severity_label as keyof typeof sevOrder] ?? 0) > (sevOrder[best] ?? 0)
+          ? (f.severity_label as EventGroup["max_severity"])
+          : best;
+      }, "low");
+
+      // total impact = sum of direct scores + sum of propagated impact_scores
+      const directSum = Array.from(g.direct.values()).reduce((s, v) => s + v.base_event_score, 0);
+      const propSum   = g.propagated.reduce((s, p) => s + p.impact_score, 0);
+      const total_impact = directSum + propSum;
+
+      // sort direct tickers by |score| desc
+      const direct_tickers = Array.from(g.direct.entries())
+        .map(([symbol, v]) => ({ symbol, ...v }))
+        .sort((a, b) => Math.abs(b.base_event_score) - Math.abs(a.base_event_score));
+
+      // deduplicate propagated by target_symbol (keep highest |impact_score|)
+      const propByTarget = new Map<string, PropagationFact>();
+      for (const pf of g.propagated) {
+        const ex = propByTarget.get(pf.target_symbol);
+        if (!ex || Math.abs(pf.impact_score) > Math.abs(ex.impact_score)) {
+          propByTarget.set(pf.target_symbol, pf);
+        }
+      }
+      const propagated_tickers = Array.from(propByTarget.values())
+        .map((pf) => ({ symbol: pf.target_symbol, target_symbol: pf.target_symbol, impact_score: pf.impact_score, relationship: pf.relationship, source_symbol: pf.source_symbol }))
+        .sort((a, b) => Math.abs(b.impact_score) - Math.abs(a.impact_score));
+
+      // sort facts by |score| desc
+      const facts = [...g.facts].sort((a, b) => Math.abs(b.base_event_score) - Math.abs(a.base_event_score));
+
+      groups.push({ event_type, macro_theme, direction, direct_tickers, propagated_tickers, facts, total_impact, max_severity });
+    }
+
+    return groups.sort((a, b) => Math.abs(b.total_impact) - Math.abs(a.total_impact));
+  }, [eventFacts, propFacts]);
+
+  const filteredGroups = useMemo(() => {
+    if (evtFilter === "all") return eventGroups;
+    return eventGroups.filter((g) =>
+      evtFilter === "up"   ? (g.direction === "up"   || (g.direction === "mixed" && g.total_impact > 0)) :
+      evtFilter === "down" ? (g.direction === "down" || (g.direction === "mixed" && g.total_impact < 0)) :
+      true
+    );
+  }, [eventGroups, evtFilter]);
 
   const longs    = scores.filter((s) => s.signal === "long").length;
   const shorts   = scores.filter((s) => s.signal === "short").length;
@@ -680,21 +864,44 @@ export default function Home() {
           </span>
           <span style={{ width: 1, height: 14, background: "#2a2e39" }} />
           <nav style={{ display: "flex", gap: 1 }}>
-            {Object.keys(PRESETS).map((name) => (
-              <button key={name} onClick={() => pickPreset(name)} style={{
-                fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 4,
+            {Object.keys(PRESETS).map((name) => {
+              const st = presetStatus[name];
+              return (
+                <button key={name} onClick={() => pickPreset(name)} style={{
+                  fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 4,
+                  border: "none", cursor: "pointer",
+                  background: preset === name ? "#2962ff" : "transparent",
+                  color: preset === name ? "#fff" : st === "done" ? "#787b86" : "#4e5263",
+                  transition: "color 0.1s, background 0.1s",
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                  {name}
+                  {st === "scanning" && (
+                    <span className="pulse-dot" style={{ width: 4, height: 4, borderRadius: "50%", background: preset === name ? "#fff" : "#2962ff", display: "inline-block" }} />
+                  )}
+                  {st === "done" && name !== preset && (
+                    <span style={{ width: 4, height: 4, borderRadius: "50%", background: "#26a69a", display: "inline-block" }} />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* View toggle */}
+          <span style={{ width: 1, height: 14, background: "#2a2e39" }} />
+          <div style={{ display: "flex", gap: 1, background: "#0e1220", borderRadius: 5, padding: 2 }}>
+            {(["ticker", "event"] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)} style={{
+                fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 3,
                 border: "none", cursor: "pointer",
-                background: preset === name ? "#2962ff" : "transparent",
-                color: preset === name ? "#fff" : "#787b86",
-                transition: "color 0.1s, background 0.1s",
+                background: view === v ? "#1e2a44" : "transparent",
+                color: view === v ? "#d1d4dc" : "#4e5263",
+                transition: "all 0.1s",
               }}>
-                {name}
-                {sessionCache.current.has(name) && name !== preset && (
-                  <span style={{ marginLeft: 4, width: 4, height: 4, borderRadius: "50%", background: "#26a69a", display: "inline-block", verticalAlign: "middle" }} />
-                )}
+                {v === "ticker" ? "Ticker" : "Event"}
               </button>
             ))}
-          </nav>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 11 }}>
@@ -719,13 +926,18 @@ export default function Home() {
               Scanning…
             </span>
           )}
-          <button onClick={scan} disabled={running || !symbols.length} style={{
-            fontSize: 11, fontWeight: 600, padding: "5px 18px", borderRadius: 4, border: "none",
-            cursor: running || !symbols.length ? "not-allowed" : "pointer",
-            background: running || !symbols.length ? "#252836" : "#2962ff",
-            color: running || !symbols.length ? "#3a3f50" : "#fff",
-          }}>
-            {running ? "Scanning…" : "Scan"}
+          <button
+            onClick={() => scanPreset(preset, symbols, true)}
+            disabled={running || Object.values(presetStatus).some((s) => s === "scanning")}
+            style={{
+              fontSize: 11, fontWeight: 600, padding: "5px 18px", borderRadius: 4, border: "none",
+              cursor: running ? "not-allowed" : "pointer",
+              background: running ? "#252836" : "#1e3a6e",
+              color: running ? "#3a3f50" : "#7aabff",
+            }}
+            title="Force a fresh scan for the current tab, bypassing cache"
+          >
+            {running ? "Scanning…" : "↺ Rescan"}
           </button>
         </div>
       </header>
@@ -757,48 +969,107 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* ── Signal table ── */}
+        {/* ── Main content area ── */}
         <main style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "6px 16px", borderBottom: "1px solid #1e2230", background: "#131722", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, minHeight: 32 }}>
-            <span style={{ fontSize: 10, color: "#3a4060", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Signal Output</span>
-            {scores.length > 0 && (
-              <>
-                <span style={{ color: "#1e2230" }}>·</span>
-                <span style={{ fontSize: 10, color: "#2962ff" }}>{scores.length} scored</span>
-              </>
-            )}
-          </div>
 
-          {scores.length === 0 ? (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-              <span style={{ fontSize: 28, color: "#1e2230" }}>◈</span>
-              <p style={{ fontSize: 11, color: "#2a2e39", textAlign: "center", lineHeight: 1.8 }}>
-                Choose a preset and click <span style={{ color: "#2962ff" }}>Scan</span>
-              </p>
-            </div>
+          {view === "ticker" ? (
+            /* ── Ticker view ── */
+            <>
+              <div style={{ padding: "6px 16px", borderBottom: "1px solid #1e2230", background: "#131722", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, minHeight: 32 }}>
+                <span style={{ fontSize: 10, color: "#3a4060", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Signal Output</span>
+                {scores.length > 0 && (
+                  <>
+                    <span style={{ color: "#1e2230" }}>·</span>
+                    <span style={{ fontSize: 10, color: "#2962ff" }}>{scores.length} scored</span>
+                  </>
+                )}
+              </div>
+
+              {scores.length === 0 ? (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <span style={{ fontSize: 28, color: "#1e2230" }}>◈</span>
+                  <p style={{ fontSize: 11, color: "#2a2e39", textAlign: "center", lineHeight: 1.8 }}>
+                    {presetStatus[preset] === "scanning" ? "Scanning…" : "Loading…"}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#161b28", borderBottom: "2px solid #1e2230", position: "sticky", top: 0, zIndex: 1 }}>
+                        {["#", "Symbol", "Signal", "Score", "Headline", "Δ Today", ""].map((h, i) => (
+                          <th key={i} style={{
+                            padding: i === 0 ? "7px 8px 7px 16px" : "7px 12px",
+                            textAlign: i === 5 ? "right" : "left",
+                            fontSize: 9, fontWeight: 700,
+                            textTransform: "uppercase", letterSpacing: "0.08em", color: "#3a4060",
+                            whiteSpace: "nowrap", userSelect: "none",
+                          }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scores.map((s, i) => <SignalRow key={s.symbol} score={s} rank={i + 1} />)}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           ) : (
-            <div style={{ overflowY: "auto", flex: 1 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "#161b28", borderBottom: "2px solid #1e2230", position: "sticky", top: 0, zIndex: 1 }}>
-                    {["#", "Symbol", "Signal", "Score", "Headline", "Δ Today", ""].map((h, i) => (
-                      <th key={i} style={{
-                        padding: i === 0 ? "7px 8px 7px 16px" : "7px 12px",
-                        textAlign: i === 5 ? "right" : "left",
-                        fontSize: 9, fontWeight: 700,
-                        textTransform: "uppercase", letterSpacing: "0.08em", color: "#3a4060",
-                        whiteSpace: "nowrap", userSelect: "none",
-                      }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {scores.map((s, i) => <SignalRow key={s.symbol} score={s} rank={i + 1} />)}
-                </tbody>
-              </table>
-            </div>
+            /* ── Event view ── */
+            <>
+              {/* Sub-header */}
+              <div style={{ padding: "6px 16px", borderBottom: "1px solid #1e2230", background: "#131722", flexShrink: 0, display: "flex", alignItems: "center", gap: 10, minHeight: 32 }}>
+                <span style={{ fontSize: 10, color: "#3a4060", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>Event Feed</span>
+                {eventGroups.length > 0 && (
+                  <>
+                    <span style={{ color: "#1e2230" }}>·</span>
+                    <span style={{ fontSize: 10, color: "#2962ff" }}>{eventGroups.length} events</span>
+                    <span style={{ color: "#1e2230" }}>·</span>
+                    <span style={{ fontSize: 10, color: "#787b86" }}>{eventFacts.length} facts</span>
+                    {propFacts.length > 0 && (
+                      <>
+                        <span style={{ color: "#1e2230" }}>·</span>
+                        <span style={{ fontSize: 10, color: "#f59e0b" }}>{propFacts.length} contagion</span>
+                      </>
+                    )}
+                  </>
+                )}
+                {/* Direction filter */}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 2, background: "#0e1220", borderRadius: 4, padding: 2 }}>
+                  {(["all", "up", "down"] as const).map((f) => (
+                    <button key={f} onClick={() => setEvtFilter(f)} style={{
+                      fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 3,
+                      border: "none", cursor: "pointer",
+                      background: evtFilter === f ? "#1e2a44" : "transparent",
+                      color: evtFilter === f
+                        ? (f === "up" ? "#26a69a" : f === "down" ? "#ef5350" : "#d1d4dc")
+                        : "#4e5263",
+                    }}>
+                      {f === "all" ? "All" : f === "up" ? "↑ Positive" : "↓ Negative"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Card feed */}
+              {eventGroups.length === 0 ? (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <span style={{ fontSize: 28, color: "#1e2230" }}>◈</span>
+                  <p style={{ fontSize: 11, color: "#2a2e39", textAlign: "center", lineHeight: 1.8 }}>
+                    {running ? "Collecting events…" : "Scan to see market events and their cross-ticker impact"}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ overflowY: "auto", flex: 1 }}>
+                  {filteredGroups.map((g) => (
+                    <EventCard key={g.event_type} group={g} />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </main>
 

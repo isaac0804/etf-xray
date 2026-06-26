@@ -1,0 +1,27 @@
+{
+  "run_id": "4e3c4b2b8b9fd9a5",
+  "watchlist": "custom",
+  "symbols": [
+    "NVDA",
+    "AMD",
+    "AVGO",
+    "QCOM",
+    "MU",
+    "TSM",
+    "INTC"
+  ],
+  "extractor_mode": "gemini",
+  "article_count": 52,
+  "event_fact_count": 17,
+  "propagation_fact_count": 9,
+  "signal_count": 7,
+  "sector_alert_count": 8,
+  "top_longs": [
+    "MU",
+    "QCOM"
+  ],
+  "top_shorts": [
+    "AMD"
+  ],
+  "warnings": []
+}
