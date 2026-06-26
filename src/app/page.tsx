@@ -1,6 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import InteractiveTour from "./InteractiveTour";
+
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,6 +32,8 @@ interface TickerScore {
   explanation: string;
   from_cache?: boolean;
   run_id?: string;
+  prometheux_backend?: string;
+  prometheux_flags?: string[];
 }
 
 interface LogEntry {
@@ -277,10 +281,10 @@ function WatchlistRow({ symbol }: { symbol: string }) {
     >
       <TickerLogo symbol={symbol} size={26} />
       <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {symbol}
         </div>
-        <div style={{ fontSize: 10, fontFamily: "monospace", color: "var(--fg-watchlist-price)", marginTop: 1 }}>
+        <div style={{ fontSize: 12, fontFamily: "monospace", color: "var(--fg-watchlist-price)", marginTop: 1 }}>
           {data ? `$${data.price.toFixed(2)}` : "—"}
         </div>
       </div>
@@ -290,11 +294,11 @@ function WatchlistRow({ symbol }: { symbol: string }) {
           : <div style={{ width: 52, height: 18 }} />
         }
         {data ? (
-          <span style={{ fontSize: 10, fontWeight: 600, fontFamily: "monospace", color, lineHeight: 1 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "monospace", color, lineHeight: 1 }}>
             {up ? "+" : ""}{pct.toFixed(2)}%
           </span>
         ) : (
-          <span style={{ fontSize: 10, color: "var(--fg-watchlist-dash)" }}>—</span>
+          <span style={{ fontSize: 12, color: "var(--fg-watchlist-dash)" }}>—</span>
         )}
       </div>
     </div>
@@ -312,11 +316,11 @@ function ScoreBar({ score, signal, riskLevel }: { score: number; signal: string;
       <div style={{ width: 52, height: 3, background: "var(--fg-score-bar-track)", borderRadius: 2, overflow: "hidden", flexShrink: 0 }}>
         <div style={{ width: `${pct}%`, height: "100%", background: fg, borderRadius: 2 }} />
       </div>
-      <span style={{ fontSize: 11, fontFamily: "monospace", color: fg, minWidth: 52 }}>
+      <span style={{ fontSize: 13, fontFamily: "monospace", color: fg, minWidth: 52 }}>
         {score > 0 ? "+" : ""}{score.toFixed(3)}
       </span>
       {riskColor && riskLevel !== "LOW" && (
-        <span style={{ fontSize: 9, fontWeight: 700, color: riskColor, letterSpacing: "0.06em" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: riskColor, letterSpacing: "0.06em" }}>
           {riskLevel?.replace("_POSITIVE", "+") ?? ""}
         </span>
       )}
@@ -402,7 +406,7 @@ function PriceChart({ symbol, color }: { symbol: string; color: string }) {
       <div style={{ display: "flex", gap: 2, marginBottom: 10, paddingLeft: PL }}>
         {(["1mo", "3mo", "6mo", "1y"] as ChartRange[]).map((r) => (
           <button key={r} onClick={() => setRange(r)} style={{
-            fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 3,
+            fontSize: 12, fontWeight: 600, padding: "2px 8px", borderRadius: 3,
             border: "none", cursor: "pointer",
             background: range === r ? color + "22" : "transparent",
             color: range === r ? color : "var(--fg-muted)",
@@ -412,7 +416,7 @@ function PriceChart({ symbol, color }: { symbol: string; color: string }) {
           </button>
         ))}
         {hover && (
-          <span style={{ marginLeft: "auto", marginRight: PR, fontSize: 11, fontFamily: "monospace", color: "var(--fg)" }}>
+          <span style={{ marginLeft: "auto", marginRight: PR, fontSize: 13, fontFamily: "monospace", color: "var(--fg)" }}>
             {hover.point.date} &nbsp;
             <strong style={{ color }}>${hover.point.close.toFixed(2)}</strong>
           </span>
@@ -422,11 +426,11 @@ function PriceChart({ symbol, color }: { symbol: string; color: string }) {
       {/* SVG chart */}
       {loading ? (
         <div style={{ width: W, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>Loading…</span>
+          <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>Loading…</span>
         </div>
       ) : points.length < 2 ? (
         <div style={{ width: W, height: H, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>No data</span>
+          <span style={{ fontSize: 13, color: "var(--fg-muted)" }}>No data</span>
         </div>
       ) : (
         <svg
@@ -518,7 +522,7 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
         }}
       >
         {/* Rank */}
-        <span style={{ fontSize: 10, color: "var(--fg-rank)", width: 20, flexShrink: 0, fontFamily: "monospace", textAlign: "center" }}>
+        <span style={{ fontSize: 12, color: "var(--fg-rank)", width: 20, flexShrink: 0, fontFamily: "monospace", textAlign: "center" }}>
           {rank}
         </span>
 
@@ -526,13 +530,13 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, width: 170, flexShrink: 0 }}>
           <TickerLogo symbol={score.symbol} size={32} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--fg)", letterSpacing: "0.01em" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--fg)", letterSpacing: "0.01em" }}>
               {score.symbol}
               {score.from_cache && (
-                <span style={{ marginLeft: 6, fontSize: 9, color: "var(--fg-cached-tag)", fontWeight: 400, fontFamily: "monospace" }}>cached</span>
+                <span style={{ marginLeft: 6, fontSize: 11, color: "var(--fg-cached-tag)", fontWeight: 400, fontFamily: "monospace" }}>cached</span>
               )}
             </div>
-            <div style={{ fontSize: 10, color: "var(--fg-name)", marginTop: 1, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: 12, color: "var(--fg-name)", marginTop: 1, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {score.name || score.symbol}
             </div>
           </div>
@@ -540,7 +544,7 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
 
         {/* Signal badge */}
         <span style={{
-          fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em",
+          fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em",
           padding: "4px 0", borderRadius: 20, textAlign: "center",
           width: 64, flexShrink: 0,
           color: fg, background: bg, border: `1px solid ${border}`,
@@ -555,16 +559,19 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
 
         {/* Δ Today */}
         <div style={{ textAlign: "right", flexShrink: 0, minWidth: 68 }}>
-          <span style={{ fontSize: 13, fontFamily: "monospace", fontWeight: 700, color: pctColor }}>
+          <span style={{ fontSize: 15, fontFamily: "monospace", fontWeight: 700, color: pctColor }}>
             {pct != null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%` : "—"}
           </span>
           {hasProp && (
-            <div style={{ fontSize: 9, color: "#f59e0b", marginTop: 2 }}>contagion</div>
+            <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 2 }}>contagion</div>
+          )}
+          {score.prometheux_backend === "prometheux_vadalog" && (
+            <div title="Reasoned by Prometheux Vadalog" style={{ fontSize: 11, color: "var(--accent)", marginTop: 2, fontWeight: 700 }}>PMTX</div>
           )}
         </div>
 
         {/* Expand chevron */}
-        <span style={{ fontSize: 10, color: "var(--fg-muted)", flexShrink: 0, marginLeft: 4 }}>
+        <span style={{ fontSize: 12, color: "var(--fg-muted)", flexShrink: 0, marginLeft: 4 }}>
           {open ? "▲" : "▼"}
         </span>
       </div>
@@ -600,10 +607,10 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
                     borderRight: i < arr.length - 1 ? "1px solid var(--glass-border)" : "none",
                     background: "var(--glass-1)",
                   }}>
-                    <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--fg-muted)", marginBottom: 5 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--fg-muted)", marginBottom: 5 }}>
                       {stat.label}
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, fontFamily: "monospace", color: stat.color }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "monospace", color: stat.color }}>
                       {stat.value}
                     </div>
                   </div>
@@ -613,18 +620,49 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
               {/* Tag pills */}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {score.sector && (
-                  <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--glass-1)", color: "var(--fg-muted)", border: "1px solid var(--glass-border)" }}>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "var(--glass-1)", color: "var(--fg-muted)", border: "1px solid var(--glass-border)" }}>
                     {score.sector}
                   </span>
                 )}
                 {score.region && (
-                  <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "var(--glass-1)", color: "var(--fg-muted)", border: "1px solid var(--glass-border)" }}>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "var(--glass-1)", color: "var(--fg-muted)", border: "1px solid var(--glass-border)" }}>
                     {score.region}
                   </span>
                 )}
                 {score.strongest_event_type && (
-                  <span style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: bg, color: fg, border: `1px solid ${border}` }}>
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: bg, color: fg, border: `1px solid ${border}` }}>
                     {fmtEvent(score.strongest_event_type)}
+                  </span>
+                )}
+                {/* Prometheux flag chips */}
+                {(score.prometheux_flags ?? []).map((flag) => {
+                  const isNeg = flag === "direct_negative" || flag === "contagion_negative";
+                  const chipBg = isNeg ? "rgba(255,70,90,0.12)" : "rgba(150,100,255,0.12)";
+                  const chipColor = isNeg ? "#ff6b7a" : "#b39dff";
+                  const chipBorder = isNeg ? "rgba(255,70,90,0.30)" : "rgba(150,100,255,0.35)";
+                  const label = flag === "direct_negative" ? "⬦ direct neg"
+                    : flag === "contagion_negative" ? "⬦ contagion neg"
+                    : flag === "low_signal" ? "⬦ low signal"
+                    : flag.replace(/_/g, " ");
+                  return (
+                    <span key={flag} title={`Prometheux Vadalog: ${flag}`} style={{
+                      fontSize: 12, padding: "3px 10px", borderRadius: 20,
+                      background: chipBg, color: chipColor, border: `1px solid ${chipBorder}`,
+                      fontWeight: 600,
+                    }}>
+                      {label}
+                    </span>
+                  );
+                })}
+                {/* Prometheux engine badge (only when flags present or vadalog ran) */}
+                {score.prometheux_backend === "prometheux_vadalog" && (
+                  <span title="Reasoned by Prometheux Vadalog engine" style={{
+                    fontSize: 11, padding: "3px 8px", borderRadius: 20,
+                    background: "rgba(99,60,255,0.15)", color: "var(--accent)",
+                    border: "1px solid rgba(99,60,255,0.35)", fontWeight: 700,
+                    letterSpacing: "0.04em",
+                  }}>
+                    PMTX
                   </span>
                 )}
 
@@ -632,7 +670,7 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
 
               {/* Driver articles */}
               <div>
-                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--fg-muted)", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--fg-muted)", marginBottom: 8 }}>
                   Drivers
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -640,16 +678,16 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
                     const url = score.top_driver_urls?.[i];
                     return (
                       <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                        <span style={{ color: "#829cff", fontSize: 10, flexShrink: 0, marginTop: 2 }}>▸</span>
+                        <span style={{ color: "#829cff", fontSize: 12, flexShrink: 0, marginTop: 2 }}>▸</span>
                         {url ? (
                           <a href={url} target="_blank" rel="noopener noreferrer"
-                            style={{ fontSize: 12, color: "var(--fg-source)", lineHeight: 1.55, textDecoration: "none" }}
+                            style={{ fontSize: 14, color: "var(--fg-source)", lineHeight: 1.55, textDecoration: "none" }}
                             onClick={(e) => e.stopPropagation()}
                             onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg-source-h)")}
                             onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-source)")}
                           >{title}</a>
                         ) : (
-                          <span style={{ fontSize: 12, color: "var(--fg-source)", lineHeight: 1.55 }}>{title}</span>
+                          <span style={{ fontSize: 14, color: "var(--fg-source)", lineHeight: 1.55 }}>{title}</span>
                         )}
                       </div>
                     );
@@ -659,7 +697,7 @@ function SignalRow({ score, rank }: { score: TickerScore; rank: number }) {
 
               {/* Explanation */}
               {score.explanation && (
-                <p style={{ fontSize: 11, color: "var(--fg-summary)", lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>
+                <p style={{ fontSize: 13, color: "var(--fg-summary)", lineHeight: 1.65, margin: 0, fontStyle: "italic" }}>
                   {score.explanation}
                 </p>
               )}
@@ -702,9 +740,9 @@ function ActivityEntry({ entry }: { entry: LogEntry }) {
     : "";
   return (
     <div className="log-entry" style={{ display: "flex", gap: 8, padding: "5px 0", borderBottom: "1px solid var(--border-dim)" }}>
-      <span style={{ fontSize: 10, fontWeight: 700, width: 44, flexShrink: 0, color }}>{label}</span>
-      <p style={{ fontSize: 10, color: "var(--fg-log)", flex: 1, lineHeight: 1.55 }}>{entry.message}</p>
-      {time && <span style={{ fontSize: 9, color: "var(--fg-log-time)", flexShrink: 0, fontFamily: "monospace" }}>{time}</span>}
+      <span style={{ fontSize: 12, fontWeight: 700, width: 44, flexShrink: 0, color }}>{label}</span>
+      <p style={{ fontSize: 12, color: "var(--fg-log)", flex: 1, lineHeight: 1.55 }}>{entry.message}</p>
+      {time && <span style={{ fontSize: 11, color: "var(--fg-log-time)", flexShrink: 0, fontFamily: "monospace" }}>{time}</span>}
     </div>
   );
 }
@@ -792,18 +830,18 @@ function EventCard({ group }: { group: EventGroup }) {
         {/* Row 1 — category + score (PRIMARY meta) */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <span style={{
-            fontSize: 10, fontWeight: 800, textTransform: "uppercase",
+            fontSize: 12, fontWeight: 800, textTransform: "uppercase",
             letterSpacing: "0.09em", color: dirColor,
           }}>
             {fmtEvent(group.event_type)}
           </span>
-          <span style={{ fontSize: 10, color: themeColor, opacity: 0.7, fontWeight: 500 }}>
+          <span style={{ fontSize: 12, color: themeColor, opacity: 0.7, fontWeight: 500 }}>
             {group.macro_theme.replace(/_/g, " ")}
           </span>
           {/* Score — right next to category, not floating */}
           <span style={{
             marginLeft: 8,
-            fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: dirColor,
+            fontSize: 14, fontFamily: "monospace", fontWeight: 700, color: dirColor,
             background: isNeg ? "var(--bg-ticker-neg)" : "var(--bg-ticker-pos)",
             border: `1px solid ${isNeg ? "var(--border-ticker-neg)" : "var(--border-ticker-pos)"}`,
             padding: "1px 7px", borderRadius: 4,
@@ -818,7 +856,7 @@ function EventCard({ group }: { group: EventGroup }) {
             {topFact?.article_title && (
               topFact.source_url ? (
                 <a href={topFact.source_url} target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 16, fontWeight: 700, color: "var(--fg-headline)", lineHeight: 1.4, textDecoration: "none", display: "block", marginBottom: 6 }}
+                  style={{ fontSize: 18, fontWeight: 700, color: "var(--fg-headline)", lineHeight: 1.4, textDecoration: "none", display: "block", marginBottom: 6 }}
                   onClick={(e) => e.stopPropagation()}
                   onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg-link-hover)")}
                   onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-headline)")}
@@ -826,7 +864,7 @@ function EventCard({ group }: { group: EventGroup }) {
                   {topFact.article_title}
                 </a>
               ) : (
-                <span style={{ fontSize: 16, fontWeight: 700, color: "var(--fg-headline)", lineHeight: 1.4, display: "block", marginBottom: 6 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: "var(--fg-headline)", lineHeight: 1.4, display: "block", marginBottom: 6 }}>
                   {topFact.article_title}
                 </span>
               )
@@ -834,7 +872,7 @@ function EventCard({ group }: { group: EventGroup }) {
 
             {/* Row 3 — summary (SECONDARY content) */}
             {summary && (
-              <p style={{ fontSize: 13, color: "var(--fg-summary)", lineHeight: 1.6, margin: "0 0 10px" }}>
+              <p style={{ fontSize: 15, color: "var(--fg-summary)", lineHeight: 1.6, margin: "0 0 10px" }}>
                 {summary}
               </p>
             )}
@@ -843,16 +881,16 @@ function EventCard({ group }: { group: EventGroup }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {/* Source */}
               {domain && (
-                <span style={{ fontSize: 11, color: "var(--fg-domain)", fontWeight: 500 }}>{domain}</span>
+                <span style={{ fontSize: 13, color: "var(--fg-domain)", fontWeight: 500 }}>{domain}</span>
               )}
               {domain && (directTickers.length > 0 || propTickers.length > 0) && (
-                <span style={{ color: "var(--border-strong)", fontSize: 12 }}>·</span>
+                <span style={{ color: "var(--border-strong)", fontSize: 14 }}>·</span>
               )}
               {/* Direct tickers */}
               {directTickers.map((t, i) => (
                 <span key={`d-${t.symbol}-${i}`} style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
-                  fontSize: 11, fontWeight: 700, fontFamily: "monospace",
+                  fontSize: 13, fontWeight: 700, fontFamily: "monospace",
                   padding: "2px 7px 2px 3px", borderRadius: 4,
                   background: isNeg ? "var(--bg-ticker-neg)" : "var(--bg-ticker-pos)",
                   color: isNeg ? "var(--fg-ticker-dir-isNeg-color)" : "var(--fg-ticker-dir-isPos-color)",
@@ -866,7 +904,7 @@ function EventCard({ group }: { group: EventGroup }) {
               {propTickers.map((t, i) => (
                 <span key={`p-${t.target_symbol}-${i}`} style={{
                   display: "inline-flex", alignItems: "center", gap: 4,
-                  fontSize: 11, fontWeight: 600, fontFamily: "monospace",
+                  fontSize: 13, fontWeight: 600, fontFamily: "monospace",
                   padding: "2px 7px 2px 3px", borderRadius: 4,
                   background: "var(--bg-ticker-prop)",
                   color: "var(--fg-ticker-prop-color)",
@@ -879,7 +917,7 @@ function EventCard({ group }: { group: EventGroup }) {
               ))}
               {/* Expand toggle */}
               {hasMore && (
-                <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--fg-muted)", userSelect: "none" }}>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--fg-muted)", userSelect: "none" }}>
                   {expanded ? "▲ less" : "▼ more"}
                 </span>
               )}
@@ -923,13 +961,13 @@ function EventCard({ group }: { group: EventGroup }) {
                 {/* Ticker + domain */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0, width: 80, paddingTop: 1 }}>
                   <span style={{
-                    fontSize: 10, fontWeight: 800, fontFamily: "monospace",
+                    fontSize: 12, fontWeight: 800, fontFamily: "monospace",
                     color: isNeg ? "var(--fg-ticker-dir-isNeg-color)" : "var(--fg-ticker-dir-isPos-color)",
                   }}>
                     {f.symbol}
                   </span>
                   {fDomain && (
-                    <span style={{ fontSize: 9, color: "var(--fg-domain)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <span style={{ fontSize: 11, color: "var(--fg-domain)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {fDomain}
                     </span>
                   )}
@@ -938,16 +976,16 @@ function EventCard({ group }: { group: EventGroup }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {f.source_url ? (
                     <a href={f.source_url} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-link)", lineHeight: 1.45, textDecoration: "none", display: "block" }}
+                      style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-link)", lineHeight: 1.45, textDecoration: "none", display: "block" }}
                       onMouseEnter={(e) => (e.currentTarget.style.color = "var(--fg-link-hover)")}
                       onMouseLeave={(e) => (e.currentTarget.style.color = "var(--fg-link)")}
                       onClick={(e) => e.stopPropagation()}
                     >{f.article_title}</a>
                   ) : (
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg-link)", lineHeight: 1.45, display: "block" }}>{f.article_title}</span>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-link)", lineHeight: 1.45, display: "block" }}>{f.article_title}</span>
                   )}
                   {fSummary && (
-                    <p style={{ fontSize: 12, color: "var(--fg-summary)", lineHeight: 1.55, margin: "4px 0 0" }}>{fSummary}</p>
+                    <p style={{ fontSize: 14, color: "var(--fg-summary)", lineHeight: 1.55, margin: "4px 0 0" }}>{fSummary}</p>
                   )}
                 </div>
                 {/* Mini thumbnail */}
@@ -967,17 +1005,17 @@ function EventCard({ group }: { group: EventGroup }) {
               borderTop: "1px solid var(--glass-border)",
               background: "rgba(99,60,255,0.04)",
             }}>
-              <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--fg-muted)", marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.09em", color: "var(--fg-muted)", marginBottom: 8 }}>
                 Contagion ripple
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 {group.propagated_tickers.map((t, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--fg-contagion-src)", fontFamily: "monospace", minWidth: 40 }}>{t.source_symbol}</span>
-                    <span style={{ fontSize: 11, color: "var(--fg-sep)" }}>→</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--fg-contagion-tgt)", fontFamily: "monospace", minWidth: 40 }}>{t.target_symbol}</span>
-                    <span style={{ fontSize: 11, color: "var(--fg-contagion-rel)", flex: 1 }}>{t.relationship.replace(/_/g, " ")}</span>
-                    <span style={{ fontSize: 11, fontFamily: "monospace", color: t.impact_score >= 0 ? "#26a69a" : "#ef5350" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-contagion-src)", fontFamily: "monospace", minWidth: 40 }}>{t.source_symbol}</span>
+                    <span style={{ fontSize: 13, color: "var(--fg-sep)" }}>→</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fg-contagion-tgt)", fontFamily: "monospace", minWidth: 40 }}>{t.target_symbol}</span>
+                    <span style={{ fontSize: 13, color: "var(--fg-contagion-rel)", flex: 1 }}>{t.relationship.replace(/_/g, " ")}</span>
+                    <span style={{ fontSize: 13, fontFamily: "monospace", color: t.impact_score >= 0 ? "#26a69a" : "#ef5350" }}>
                       {t.impact_score >= 0 ? "+" : ""}{t.impact_score.toFixed(3)}
                     </span>
                   </div>
@@ -1245,7 +1283,7 @@ export default function Home() {
         flexShrink: 0, gap: 16,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 14, fontWeight: 800, color: "var(--fg)", letterSpacing: "-0.02em" }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--fg)", letterSpacing: "-0.02em" }}>
             Signal Monitor
           </span>
           <span style={{ width: 1, height: 16, background: "var(--glass-border-strong)" }} />
@@ -1257,7 +1295,7 @@ export default function Home() {
               const isActive = preset === name;
               return (
                 <button key={name} onClick={() => pickPreset(name)} style={{
-                  fontSize: 11, fontWeight: 600, padding: "5px 12px", borderRadius: 8,
+                  fontSize: 13, fontWeight: 600, padding: "5px 12px", borderRadius: 8,
                   border: isActive ? "1px solid rgba(99,60,255,0.4)" : "1px solid transparent",
                   cursor: "pointer",
                   background: isActive ? "rgba(99,60,255,0.25)" : "transparent",
@@ -1288,7 +1326,7 @@ export default function Home() {
           }}>
             {(["ticker", "event"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)} style={{
-                fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 7,
+                fontSize: 13, fontWeight: 600, padding: "4px 12px", borderRadius: 7,
                 border: "none", cursor: "pointer",
                 background: view === v ? "rgba(99,60,255,0.25)" : "transparent",
                 color: view === v ? "#c8b8ff" : "var(--fg-muted)",
@@ -1300,7 +1338,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 11 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 13 }}>
           {scores.length > 0 && !running && (
             <div style={{ display: "flex", gap: 10 }}>
               {longs    > 0 && <span style={{ color: "#26a69a", fontWeight: 600 }}>▲ {longs}</span>}
@@ -1309,7 +1347,7 @@ export default function Home() {
             </div>
           )}
           {fromCache && !running && (
-            <span style={{ fontSize: 10, color: "var(--fg-cached)", fontFamily: "monospace" }}>● cached</span>
+            <span style={{ fontSize: 12, color: "var(--fg-cached)", fontFamily: "monospace" }}>● cached</span>
           )}
           {lastScan && !running && (
             <span style={{ color: "var(--fg-muted)" }}>
@@ -1334,7 +1372,7 @@ export default function Home() {
             }}
             disabled={Object.values(presetStatus).some((s) => s === "scanning")}
             style={{
-              fontSize: 11, fontWeight: 600, padding: "6px 16px", borderRadius: 8,
+              fontSize: 13, fontWeight: 600, padding: "6px 16px", borderRadius: 8,
               border: "1px solid rgba(99,60,255,0.35)",
               cursor: Object.values(presetStatus).some((s) => s === "scanning") ? "not-allowed" : "pointer",
               background: Object.values(presetStatus).some((s) => s === "scanning") ? "rgba(255,255,255,0.04)" : "rgba(99,60,255,0.20)",
@@ -1351,7 +1389,7 @@ export default function Home() {
             onClick={toggleTheme}
             title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             style={{
-              fontSize: 15, lineHeight: 1, padding: "5px 9px", borderRadius: 8,
+              fontSize: 17, lineHeight: 1, padding: "5px 9px", borderRadius: 8,
               border: "1px solid var(--glass-border-strong)", cursor: "pointer",
               background: "var(--bg-input)", color: "var(--fg-dim)",
               backdropFilter: "blur(8px)",
@@ -1375,15 +1413,15 @@ export default function Home() {
           borderRight: "1px solid var(--glass-border)",
         }}>
           <div style={{ padding: "10px 14px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fg-section-label)" }}>Watchlist</span>
-            <span style={{ fontSize: 10, color: "var(--fg-muted)", fontFamily: "monospace" }}>{symbols.length}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fg-section-label)" }}>Watchlist</span>
+            <span style={{ fontSize: 12, color: "var(--fg-muted)", fontFamily: "monospace" }}>{symbols.length}</span>
           </div>
           <div style={{ overflowY: "auto", flex: 1, padding: "4px 8px", display: "flex", flexDirection: "column", gap: 4 }}>
             {symbols.map((sym, i) => <WatchlistRow key={`${sym}-${i}`} symbol={sym} />)}
           </div>
           <div style={{ padding: "10px 14px", borderTop: "1px solid var(--glass-border)" }}>
-            <div style={{ fontSize: 9, color: "var(--fg-threshold)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Thresholds</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 10 }}>
+            <div style={{ fontSize: 11, color: "var(--fg-threshold)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Thresholds</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: "#26a69a" }}>● Long</span>
                 <span style={{ color: "var(--fg-threshold)", fontFamily: "monospace" }}>≥ +0.55</span>
@@ -1405,19 +1443,19 @@ export default function Home() {
                 display: "flex", alignItems: "center", gap: 8, minHeight: 36,
                 borderBottom: "1px solid var(--glass-border)",
               }}>
-                <span style={{ fontSize: 10, color: "var(--fg-section-label)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Signal Output</span>
+                <span style={{ fontSize: 12, color: "var(--fg-section-label)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Signal Output</span>
                 {scores.length > 0 && (
                   <>
                     <span style={{ color: "var(--fg-ghost)" }}>·</span>
-                    <span style={{ fontSize: 10, color: "#829cff" }}>{scores.length} scored</span>
+                    <span style={{ fontSize: 12, color: "#829cff" }}>{scores.length} scored</span>
                   </>
                 )}
               </div>
 
               {scores.length === 0 ? (
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
-                  <span style={{ fontSize: 32, color: "var(--fg-ghost)" }}>◈</span>
-                  <p style={{ fontSize: 12, color: "var(--fg-muted)", textAlign: "center", lineHeight: 1.8 }}>
+                  <span style={{ fontSize: 36, color: "var(--fg-ghost)" }}>◈</span>
+                  <p style={{ fontSize: 14, color: "var(--fg-muted)", textAlign: "center", lineHeight: 1.8 }}>
                     {presetStatus[preset] === "scanning" ? "Scanning…" : "Loading…"}
                   </p>
                 </div>
@@ -1434,17 +1472,17 @@ export default function Home() {
                 display: "flex", alignItems: "center", gap: 10, minHeight: 36,
                 borderBottom: "1px solid var(--glass-border)",
               }}>
-                <span style={{ fontSize: 10, color: "var(--fg-section-label)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Event Feed</span>
+                <span style={{ fontSize: 12, color: "var(--fg-section-label)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700 }}>Event Feed</span>
                 {eventGroups.length > 0 && (
                   <>
                     <span style={{ color: "var(--fg-ghost)" }}>·</span>
-                    <span style={{ fontSize: 10, color: "#829cff" }}>{eventGroups.length} events</span>
+                    <span style={{ fontSize: 12, color: "#829cff" }}>{eventGroups.length} events</span>
                     <span style={{ color: "var(--fg-ghost)" }}>·</span>
-                    <span style={{ fontSize: 10, color: "var(--fg-dim)" }}>{eventFacts.length} facts</span>
+                    <span style={{ fontSize: 12, color: "var(--fg-dim)" }}>{eventFacts.length} facts</span>
                     {propFacts.length > 0 && (
                       <>
                         <span style={{ color: "var(--fg-ghost)" }}>·</span>
-                        <span style={{ fontSize: 10, color: "#f59e0b" }}>{propFacts.length} contagion</span>
+                        <span style={{ fontSize: 12, color: "#f59e0b" }}>{propFacts.length} contagion</span>
                       </>
                     )}
                   </>
@@ -1452,7 +1490,7 @@ export default function Home() {
                 <div style={{ marginLeft: "auto", display: "flex", gap: 2, padding: 3, borderRadius: 8, background: "var(--bg-input)", border: "1px solid var(--glass-border)" }}>
                   {(["all", "up", "down"] as const).map((f) => (
                     <button key={f} onClick={() => setEvtFilter(f)} style={{
-                      fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 6,
+                      fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 6,
                       border: "none", cursor: "pointer",
                       background: evtFilter === f ? "rgba(99,60,255,0.25)" : "transparent",
                       color: evtFilter === f
@@ -1468,8 +1506,8 @@ export default function Home() {
 
               {eventGroups.length === 0 ? (
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
-                  <span style={{ fontSize: 32, color: "var(--fg-ghost)" }}>◈</span>
-                  <p style={{ fontSize: 12, color: "var(--fg-muted)", textAlign: "center", lineHeight: 1.8 }}>
+                  <span style={{ fontSize: 36, color: "var(--fg-ghost)" }}>◈</span>
+                  <p style={{ fontSize: 14, color: "var(--fg-muted)", textAlign: "center", lineHeight: 1.8 }}>
                     {running ? "Collecting events…" : "Scan to see market events and their cross-ticker impact"}
                   </p>
                 </div>
@@ -1483,6 +1521,16 @@ export default function Home() {
         </main>
 
       </div>
+      <InteractiveTour
+        view={view}
+        setView={setView}
+        preset={preset}
+        pickPreset={pickPreset}
+        running={running}
+        scanPreset={scanPreset}
+        scoresCount={scores.length}
+        eventsCount={eventFacts.length}
+      />
     </div>
   );
 }

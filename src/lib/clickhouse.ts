@@ -39,6 +39,8 @@ export interface CachedSignal {
   explanation: string;
   rules_fired: string[];
   run_id: string;
+  prometheux_backend: string;
+  prometheux_flags: string[];
 }
 
 /** Returns fresh signals for all requested symbols, or null if fewer than minFreshFraction are cached.
@@ -63,7 +65,9 @@ export async function queryFreshSignals(
           symbol, name, sector, region, signal, risk_level,
           total_score, direct_score, propagated_score, price_change_pct,
           event_count, propagation_count, strongest_event_type,
-          top_driver_titles, top_driver_urls, explanation, rules_fired, run_id
+          top_driver_titles, top_driver_urls, explanation, rules_fired, run_id,
+          ifNull(prometheux_backend, '')   AS prometheux_backend,
+          ifNull(prometheux_flags,   [])   AS prometheux_flags
         FROM ${DB}.signal_cache FINAL
         WHERE symbol IN (${inList})
           AND run_ts > now() - INTERVAL ${maxAgeSecs} SECOND
