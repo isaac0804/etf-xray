@@ -1,0 +1,40 @@
+{
+  "run_id": "2f4c4b70a3edfe1a",
+  "watchlist": "custom",
+  "symbols": [
+    "TSM",
+    "NVDA",
+    "AMD"
+  ],
+  "architecture": "retrieval -> extraction -> reasoning -> evaluation",
+  "agent_count": 4,
+  "article_count": 16,
+  "event_fact_count": 2,
+  "propagation_fact_count": 0,
+  "signal_count": 3,
+  "sector_alert_count": 0,
+  "top_longs": [],
+  "top_shorts": [],
+  "retrieval_backends": [
+    "default_fallback"
+  ],
+  "extraction_backends": [
+    "clickhouse_cache_only",
+    "fallback_keywords"
+  ],
+  "reasoning_backends": [
+    "prometheux_no_compute"
+  ],
+  "evaluation_backends": [
+    "clickhouse_history",
+    "unavailable"
+  ],
+  "warnings": [
+    "Gemini reasoning explanation skipped for TSM: quota exhausted.",
+    "Gemini reasoning explanation skipped for NVDA: quota exhausted.",
+    "Gemini reasoning explanation skipped for AMD: quota exhausted.",
+    "Gemini evaluation summary skipped for TSM: quota exhausted.",
+    "Gemini evaluation summary skipped for NVDA: quota exhausted.",
+    "Gemini evaluation summary skipped for AMD: quota exhausted."
+  ]
+}

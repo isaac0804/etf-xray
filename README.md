@@ -2,15 +2,12 @@
 
 Generic event-driven signal engine for a hackathon build.
 
-It now follows this flow:
+It now follows an explicit 4-agent flow:
 
-- `Tavily` retrieves recent market-moving articles per symbol
-- `article_filters.py` removes quote/profile/noise pages and scores article quality
-- `Gemini` extracts structured event facts when quota is available
-- deterministic keyword rules take over automatically if Gemini is unavailable
-- `propagation_graph.py` maps direct events into downstream contagion facts
-- Python rules generate ticker signals and sector alerts
-- local JSONL outputs are ready for `ClickHouse`
+- `Retrieval Agent`: `Gemini` plans the query and `Tavily` retrieves recent market-moving articles
+- `Extraction Agent`: `Gemini` converts articles into structured event facts, with keyword fallback when quota is tight
+- `Reasoning Agent`: deterministic direct / propagation / macro scorers run first, and `Prometheux` is attempted as the rule engine when compute is available
+- `Evaluation Agent`: `ClickHouse` provides cache/history/replay support before the final deterministic aggregator emits the signal
 
 ## What It Does
 
@@ -41,6 +38,7 @@ Notes:
 - `Prometheux` now uses the documented JarvisPy base URL shape.
 - If `JARVISPY_URL` is blank or left as the root host, `probe_prometheux.py` can derive the correct `jarvispy/{org}/{user}` path from the JWT claims inside `PMTX_TOKEN`.
 - `ClickHouse` sync works when the connection settings are present in `.env`.
+- If `Prometheux` compute is not active, the reasoning agent falls back to local deterministic rules and records that backend choice.
 
 ## Main Run
 
@@ -112,6 +110,8 @@ with files such as:
 - `propagation_facts.jsonl`
 - `signal_outputs.jsonl`
 - `sector_alerts.jsonl`
+- `evaluation_snapshots.jsonl`
+- `agent_runs.jsonl`
 - `summary.json`
 
 Compatibility aliases are also written:
@@ -132,6 +132,8 @@ Main tables:
 - `propagation_facts`
 - `signal_outputs`
 - `sector_alerts`
+- `evaluation_snapshots`
+- `agent_runs`
 
 Import shape is `JSONEachRow`, for example:
 
@@ -167,15 +169,23 @@ The active scoring stack is:
    - `affected_sectors`
 4. If Gemini is unavailable, keyword rules generate the same kind of facts.
 5. `propagation_graph.py` maps upstream events into downstream ticker impacts.
-6. The rule layer produces:
-   - direct ticker scores
-   - propagated ticker scores
+6. The reasoning layer splits the score into:
+   - direct impact
+   - propagation impact
+   - macro/theme impact
+7. `ClickHouse` contributes:
+   - cache hits for repeated article URLs
+   - similar-event replay support
+   - confidence adjustments
+8. A deterministic aggregator emits:
+   - final ticker signals
+   - confidence / conviction
    - sector contagion alerts
 
 ## Prometheux Fit
 
-The Python rules are the active implementation right now because that was the
-fastest way to make the project work end-to-end.
+The local deterministic rules remain the reliable fallback when Prometheux
+compute is not active.
 
 `Prometheux` is the natural upgrade for:
 
@@ -184,6 +194,9 @@ fastest way to make the project work end-to-end.
 - dependency reasoning
 - rule execution and traceability
 - explanation paths from source event to final signal
+
+The current build already attempts the platform Vadalog path first and records
+the reasoning backend per run.
 
 There is an illustrative rules file here:
 

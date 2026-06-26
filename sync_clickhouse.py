@@ -17,6 +17,8 @@ TABLE_FILE_MAP = [
     ("propagation_facts", "propagation_facts.jsonl"),
     ("signal_outputs", "signal_outputs.jsonl"),
     ("sector_alerts", "sector_alerts.jsonl"),
+    ("evaluation_snapshots", "evaluation_snapshots.jsonl"),
+    ("agent_runs", "agent_runs.jsonl"),
 ]
 
 

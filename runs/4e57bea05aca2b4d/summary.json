@@ -1,0 +1,38 @@
+{
+  "run_id": "4e57bea05aca2b4d",
+  "watchlist": "custom",
+  "symbols": [
+    "NVDA",
+    "AMD"
+  ],
+  "architecture": "retrieval -> extraction -> reasoning -> evaluation",
+  "agent_count": 4,
+  "article_count": 10,
+  "event_fact_count": 1,
+  "propagation_fact_count": 0,
+  "signal_count": 2,
+  "sector_alert_count": 0,
+  "top_longs": [],
+  "top_shorts": [],
+  "retrieval_backends": [
+    "default_fallback",
+    "gemini:gemini-2.5-flash"
+  ],
+  "extraction_backends": [
+    "keyword_rules"
+  ],
+  "reasoning_backends": [
+    "prometheux_no_compute"
+  ],
+  "evaluation_backends": [
+    "unavailable"
+  ],
+  "warnings": [
+    "Gemini quota exhausted for NVDA; falling back to keywords.",
+    "Gemini quota exhausted for AMD; falling back to keywords.",
+    "Gemini reasoning explanation failed for NVDA: Command '['curl', '--fail-with-body', '-sS', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', '-H', 'x-goog-api-key: AIzaSyBb1qX8j5NrbgC_E54iqUBXtDoOLdsuE3I', '-H', 'Content-Type: application/json', '-d', '{\"contents\": [{\"parts\": [{\"text\": \"Return JSON only.\\\\nSummarize this deterministic event-driven signal reasoning stack.\\\\nSymbol: NVDA\\\\nDirect score: +0.0000\\\\nPropagation score: +0.0000\\\\nMacro score: +0.0000\\\\nDominant event: none\\\\nDominant theme: other\\\\nRules fired: no_material_event\\\\n\\\\nSchema:\\\\n{\\\\n  \\\\\"dominant_thesis\\\\\": \\\\\"string\\\\\",\\\\n  \\\\\"signal_horizon\\\\\": \\\\\"intraday|short_term|medium_term\\\\\",\\\\n  \\\\\"short_explanation\\\\\": \\\\\"one sentence\\\\\"\\\\n}\"}]}], \"generationConfig\": {\"temperature\": 0.0, \"responseMimeType\": \"application/json\"}}']' returned non-zero exit status 22.",
+    "Gemini reasoning explanation failed for AMD: Command '['curl', '--fail-with-body', '-sS', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', '-H', 'x-goog-api-key: AIzaSyBb1qX8j5NrbgC_E54iqUBXtDoOLdsuE3I', '-H', 'Content-Type: application/json', '-d', '{\"contents\": [{\"parts\": [{\"text\": \"Return JSON only.\\\\nSummarize this deterministic event-driven signal reasoning stack.\\\\nSymbol: AMD\\\\nDirect score: +0.0000\\\\nPropagation score: +0.0000\\\\nMacro score: +0.0000\\\\nDominant event: none\\\\nDominant theme: other\\\\nRules fired: no_material_event\\\\n\\\\nSchema:\\\\n{\\\\n  \\\\\"dominant_thesis\\\\\": \\\\\"string\\\\\",\\\\n  \\\\\"signal_horizon\\\\\": \\\\\"intraday|short_term|medium_term\\\\\",\\\\n  \\\\\"short_explanation\\\\\": \\\\\"one sentence\\\\\"\\\\n}\"}]}], \"generationConfig\": {\"temperature\": 0.0, \"responseMimeType\": \"application/json\"}}']' returned non-zero exit status 22.",
+    "Gemini evaluation summary failed for NVDA: Command '['curl', '--fail-with-body', '-sS', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', '-H', 'x-goog-api-key: AIzaSyBb1qX8j5NrbgC_E54iqUBXtDoOLdsuE3I', '-H', 'Content-Type: application/json', '-d', '{\"contents\": [{\"parts\": [{\"text\": \"Return JSON only.\\\\nYou are the evaluation agent for an event-driven signal workflow.\\\\nSymbol: NVDA\\\\nCurrent event types: none\\\\nSimilar historical events: 0\\\\nAverage past total score: None\\\\nHistorical support: 0.5\\\\n\\\\nSchema:\\\\n{\\\\n  \\\\\"summary\\\\\": \\\\\"one short sentence about whether history supports the current view\\\\\"\\\\n}\"}]}], \"generationConfig\": {\"temperature\": 0.0, \"responseMimeType\": \"application/json\"}}']' returned non-zero exit status 22.",
+    "Gemini evaluation summary failed for AMD: Command '['curl', '--fail-with-body', '-sS', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', '-H', 'x-goog-api-key: AIzaSyBb1qX8j5NrbgC_E54iqUBXtDoOLdsuE3I', '-H', 'Content-Type: application/json', '-d', '{\"contents\": [{\"parts\": [{\"text\": \"Return JSON only.\\\\nYou are the evaluation agent for an event-driven signal workflow.\\\\nSymbol: AMD\\\\nCurrent event types: none\\\\nSimilar historical events: 0\\\\nAverage past total score: None\\\\nHistorical support: 0.5\\\\n\\\\nSchema:\\\\n{\\\\n  \\\\\"summary\\\\\": \\\\\"one short sentence about whether history supports the current view\\\\\"\\\\n}\"}]}], \"generationConfig\": {\"temperature\": 0.0, \"responseMimeType\": \"application/json\"}}']' returned non-zero exit status 22."
+  ]
+}

@@ -47,7 +47,17 @@ def get_model_candidates(model: str | None = None) -> list[str]:
     return candidates
 
 
-def build_payload(prompt: str) -> dict[str, object]:
+def build_payload(
+    prompt: str,
+    temperature: float = 0.0,
+    response_mime_type: str | None = None,
+) -> dict[str, object]:
+    generation_config: dict[str, object] = {
+        "temperature": temperature,
+    }
+    if response_mime_type:
+        generation_config["responseMimeType"] = response_mime_type
+
     return {
         "contents": [
             {
@@ -58,9 +68,7 @@ def build_payload(prompt: str) -> dict[str, object]:
                 ]
             }
         ],
-        "generationConfig": {
-            "temperature": 0.2,
-        },
+        "generationConfig": generation_config,
     }
 
 
@@ -79,13 +87,23 @@ def should_retry_on_model_fallback(exc: subprocess.CalledProcessError) -> bool:
     return any(marker in details for marker in retry_markers)
 
 
-def call_gemini_once(api_key: str, prompt: str, model_name: str) -> dict[str, object]:
+def call_gemini_once(
+    api_key: str,
+    prompt: str,
+    model_name: str,
+    temperature: float = 0.0,
+    response_mime_type: str | None = None,
+) -> dict[str, object]:
     """Call a single Gemini model once."""
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model_name}:generateContent"
     )
-    payload = build_payload(prompt)
+    payload = build_payload(
+        prompt,
+        temperature=temperature,
+        response_mime_type=response_mime_type,
+    )
 
     result = subprocess.run(
         [
@@ -111,13 +129,25 @@ def call_gemini_once(api_key: str, prompt: str, model_name: str) -> dict[str, ob
     return data
 
 
-def call_gemini(api_key: str, prompt: str, model: str | None = None) -> dict[str, object]:
+def call_gemini(
+    api_key: str,
+    prompt: str,
+    model: str | None = None,
+    temperature: float = 0.0,
+    response_mime_type: str | None = None,
+) -> dict[str, object]:
     """Call Gemini with automatic fallback to smaller models when appropriate."""
     last_error: subprocess.CalledProcessError | None = None
 
     for model_name in get_model_candidates(model):
         try:
-            return call_gemini_once(api_key, prompt, model_name)
+            return call_gemini_once(
+                api_key,
+                prompt,
+                model_name,
+                temperature=temperature,
+                response_mime_type=response_mime_type,
+            )
         except subprocess.CalledProcessError as exc:
             last_error = exc
             if should_retry_on_model_fallback(exc):
